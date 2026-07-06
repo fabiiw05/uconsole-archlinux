@@ -1,0 +1,14 @@
+# Build artifacts
+/out/
+/work/
+*.img
+*.img.*
+*.tar.gz
+*.tar.xz
+
+# Downloaded base tarballs
+/cache/
+
+# Editor / OS
+*.swp
+.DS_Store
