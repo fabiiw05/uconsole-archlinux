@@ -6,6 +6,9 @@
 *.tar.gz
 *.tar.xz
 
+# Kernel build tree (raspberrypi/linux clone, patch, out/, modules/)
+/kernel/
+
 # Downloaded base tarballs
 /cache/
 

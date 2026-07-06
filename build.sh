@@ -22,6 +22,7 @@ TARBALL_URL="${TARBALL_URL:-http://os.archlinuxarm.org/os/ArchLinuxARM-rpi-aarch
 OUT_DIR="${OUT_DIR:-${SCRIPT_DIR}/out}"
 CACHE_DIR="${CACHE_DIR:-${SCRIPT_DIR}/cache}"
 WORK_DIR="${WORK_DIR:-${SCRIPT_DIR}/work}"
+KDIR="${KDIR:-${SCRIPT_DIR}/kernel}"
 SKIP_CHROOT="${SKIP_CHROOT:-}"
 
 IMG_NAME="uconsole-archlinux-$(date +%Y%m%d).img"
@@ -118,12 +119,11 @@ apply_config() {
   local dtbos=("${SCRIPT_DIR}"/config/overlays/*.dtbo)
   shopt -u nullglob
   if ((${#dtbos[@]})); then
-    log "overlay を配置: ${#dtbos[@]} 件"
+    log "追加 overlay を配置: ${#dtbos[@]} 件"
     mkdir -p "${ROOT_MNT}/boot/overlays"
     install -m 0644 "${dtbos[@]}" "${ROOT_MNT}/boot/overlays/"
-  else
-    warn "config/overlays に .dtbo がありません（DSI パネルは要 overlay。README 参照）"
   fi
+  # devterm-* の overlay は install_kernel でカーネル成果物から配置される。
 
   # /etc/fstab に boot を明示
   cat > "${ROOT_MNT}/etc/fstab" <<'EOF'
@@ -132,6 +132,38 @@ apply_config() {
 EOF
 
   echo "${HOSTNAME}" > "${ROOT_MNT}/etc/hostname"
+}
+
+# --- 4.5 パッチ済みカーネルの導入 -------------------------------------
+# scripts/build-kernel.sh の成果物 (kernel/out, kernel/modules) があれば
+# イメージへ取り込む。無ければ Arch 標準の linux-rpi のままとなり、
+# uConsole の DSI パネルは点灯しない点を警告する。
+install_kernel() {
+  if [[ ! -f "${KDIR}/out/kernel8.img" ]]; then
+    warn "パッチ済みカーネルが未ビルドです (${KDIR}/out/kernel8.img が無い)"
+    warn "DSI パネルを使うには先に ./scripts/build-kernel.sh を実行してください"
+    return
+  fi
+  log "uConsole パッチ済みカーネルを導入"
+  install -m 0644 "${KDIR}/out/kernel8.img" "${ROOT_MNT}/boot/kernel8.img"
+
+  shopt -s nullglob
+  local dtbs=("${KDIR}"/out/*.dtb)
+  local dtbos=("${KDIR}"/out/overlays/*.dtbo)
+  shopt -u nullglob
+  ((${#dtbs[@]}))  && install -m 0644 "${dtbs[@]}" "${ROOT_MNT}/boot/"
+  if ((${#dtbos[@]})); then
+    mkdir -p "${ROOT_MNT}/boot/overlays"
+    install -m 0644 "${dtbos[@]}" "${ROOT_MNT}/boot/overlays/"
+  fi
+
+  # カーネルモジュール
+  if [[ -d "${KDIR}/modules/lib/modules" ]]; then
+    log "カーネルモジュールを配置"
+    mkdir -p "${ROOT_MNT}/usr/lib/modules"
+    cp -a "${KDIR}"/modules/lib/modules/* "${ROOT_MNT}/usr/lib/modules/"
+  fi
+  ok "パッチ済みカーネルの導入完了"
 }
 
 # --- 5. chroot カスタマイズ -------------------------------------------
@@ -178,6 +210,7 @@ main() {
   create_image
   extract_rootfs
   apply_config
+  install_kernel
   customize_chroot
   finalize
 }

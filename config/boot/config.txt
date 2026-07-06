@@ -1,32 +1,36 @@
 # uConsole (CM4) - Raspberry Pi firmware boot config
 # Base: Arch Linux ARM rpi-aarch64
-# Docs: https://www.raspberrypi.com/documentation/computers/config_txt.html
+#
+# devterm-* の各 overlay と devterm-panel-uc(DSIパネル) は ClockworkPi の
+# パッチ済みカーネルに含まれるものです。scripts/build-kernel.sh でビルドした
+# カーネル成果物を導入して初めて有効になります（README 参照）。
+# ベースは ClockworkPi 公式 uConsole CM4 の config.txt に準拠。
 
-[all]
-# KMS / GPU
-dtoverlay=vc4-kms-v3d
-max_framebuffers=2
-disable_fw_kms_setup=1
 disable_overscan=1
-arm_boost=1
-arm_64bit=1
-
-# Audio (uConsole extension board)
 dtparam=audio=on
 
-# USB (CM4 の dwc2 を host モードで)
+[pi4]
+max_framebuffers=2
+
+[all]
+# 内蔵LCD自動検出を無効化し、uConsole 専用パネルを使う
+ignore_lcd=1
+
+# USB (CM4 dwc2 を host モードで)
 dtoverlay=dwc2,dr_mode=host
 
-# --- uConsole 5" DSI パネル ---------------------------------------------
-# ClockworkPi 提供の overlay (.dtbo) を config/overlays/ に置き、
-# ここのコメントを外して有効化してください（README の "Display overlay" 参照）。
-#dtoverlay=clockworkpi-uconsole
-#
-# パネルは縦長 720x1280 を横向きで使うため、必要に応じて回転を指定します。
-# KMS 環境では config.txt の display_rotate ではなく overlay 側 / 環境側で
-# 回転を扱うのが一般的です。
-# ------------------------------------------------------------------------
+# KMS / GPU (uConsole は pi4 版 + CMA 384MB)
+dtoverlay=vc4-kms-v3d-pi4,cma-384
 
-[cm4]
-# CM4 の PCIe/USB コントローラを有効化
-otg_mode=1
+# --- uConsole 専用 overlay（パッチ済みカーネルが提供） ---
+dtoverlay=devterm-pmu
+dtoverlay=devterm-panel-uc
+dtoverlay=devterm-misc
+
+# オーディオ (GPIO12/13 PWM)
+dtoverlay=audremap,pins_12_13
+
+# SPI / アンテナ等
+dtparam=spi=on
+gpio=10=ip,np
+dtparam=ant2
