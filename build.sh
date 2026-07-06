@@ -15,7 +15,9 @@ source "${SCRIPT_DIR}/lib/common.sh"
 # --- 設定 --------------------------------------------------------------
 IMG_SIZE="${IMG_SIZE:-6G}"
 BOOT_SIZE="${BOOT_SIZE:-256M}"
-HOSTNAME="${HOSTNAME:-uconsole}"
+# NOTE: bash はマシン名を組み込み変数 HOSTNAME に自動設定するため、その名前は
+# 使わない（sudo 実行時にホストのマシン名を拾ってしまう）。UC_HOSTNAME を使う。
+UC_HOSTNAME="${UC_HOSTNAME:-uconsole}"
 TIMEZONE="${TIMEZONE:-Asia/Tokyo}"
 LOCALE="${LOCALE:-en_US.UTF-8}"
 TARBALL_URL="${TARBALL_URL:-http://os.archlinuxarm.org/os/ArchLinuxARM-rpi-aarch64-latest.tar.gz}"
@@ -99,7 +101,7 @@ extract_rootfs() {
   log "ファイルシステムをマウント"
   mkdir -p "${ROOT_MNT}"
   mount "${LOOPDEV}p2" "${ROOT_MNT}"
-  push_cleanup "umount -R '${ROOT_MNT}'"
+  push_cleanup "umount -Rl '${ROOT_MNT}'"
   mkdir -p "${ROOT_MNT}/boot"
   mount "${LOOPDEV}p1" "${ROOT_MNT}/boot"
 
@@ -131,7 +133,7 @@ apply_config() {
 /dev/mmcblk0p1  /boot  vfat    defaults           0      0
 EOF
 
-  echo "${HOSTNAME}" > "${ROOT_MNT}/etc/hostname"
+  echo "${UC_HOSTNAME}" > "${ROOT_MNT}/etc/hostname"
 }
 
 # --- 4.5 パッチ済みカーネルの導入 -------------------------------------
@@ -186,15 +188,30 @@ customize_chroot() {
   mount -t proc  /proc            "${ROOT_MNT}/proc"
   mount --rbind  /sys             "${ROOT_MNT}/sys"
   mount --rbind  /dev             "${ROOT_MNT}/dev"
-  push_cleanup "umount -R '${ROOT_MNT}/proc' '${ROOT_MNT}/sys' '${ROOT_MNT}/dev' 2>/dev/null || true"
+  # lazy(-l) を付ける: chroot 内で起動した gpg-agent 等が /dev/pts を掴んで
+  # busy になっても確実に外せるようにする。
+  push_cleanup "umount -Rl '${ROOT_MNT}/proc' '${ROOT_MNT}/sys' '${ROOT_MNT}/dev' 2>/dev/null || true"
   cp --remove-destination /etc/resolv.conf "${ROOT_MNT}/etc/resolv.conf"
 
   install -m 0755 "${SCRIPT_DIR}/scripts/customize.sh" "${ROOT_MNT}/root/customize.sh"
-  HOSTNAME="${HOSTNAME}" TIMEZONE="${TIMEZONE}" LOCALE="${LOCALE}" \
-    chroot "${ROOT_MNT}" /usr/bin/env \
-      HOSTNAME="${HOSTNAME}" TIMEZONE="${TIMEZONE}" LOCALE="${LOCALE}" \
+  chroot "${ROOT_MNT}" /usr/bin/env \
+      UC_HOSTNAME="${UC_HOSTNAME}" TIMEZONE="${TIMEZONE}" LOCALE="${LOCALE}" \
       /bin/bash /root/customize.sh
   rm -f "${ROOT_MNT}/root/customize.sh"
+
+  # chroot 内で残った gpg-agent 等を停止しないと後続の umount が busy になる。
+  chroot "${ROOT_MNT}" /usr/bin/gpgconf --kill all 2>/dev/null || true
+  kill_chroot_procs
+}
+
+# ROOT_MNT 配下を root とするプロセスを終了させる（gpg-agent 等の掃除）。
+kill_chroot_procs() {
+  local p rootlink
+  for p in /proc/[0-9]*; do
+    rootlink="$(readlink "${p}/root" 2>/dev/null)" || continue
+    [[ "${rootlink}" == "${ROOT_MNT}" || "${rootlink}" == "${ROOT_MNT}/"* ]] \
+      && kill "${p##*/}" 2>/dev/null || true
+  done
 }
 
 # --- 6. 仕上げ ---------------------------------------------------------

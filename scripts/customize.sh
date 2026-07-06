@@ -2,14 +2,18 @@
 #
 # chroot 内で実行される初期カスタマイズ。
 # build.sh から qemu-aarch64-static 経由で呼ばれる。
-# 環境変数 HOSTNAME / TIMEZONE / LOCALE を参照する。
+# 環境変数 UC_HOSTNAME / TIMEZONE / LOCALE を参照する。
 #
 # 単体で失敗してもイメージ自体は使えるよう、致命的でない処理は続行する。
 set -uo pipefail
 
-HOSTNAME="${HOSTNAME:-uconsole}"
+UC_HOSTNAME="${UC_HOSTNAME:-uconsole}"
 TIMEZONE="${TIMEZONE:-Asia/Tokyo}"
 LOCALE="${LOCALE:-en_US.UTF-8}"
+
+# qemu-user エミュレーション下では pacman のサンドボックス(Landlock)が使えず
+# "Landlock is not supported by the kernel" で失敗するため無効化する。
+PAC="pacman --disable-sandbox"
 
 echo "==> [chroot] pacman キーリングを初期化"
 pacman-key --init          || echo "!! pacman-key --init 失敗（続行）"
@@ -24,18 +28,18 @@ grep -q "^${LOCALE}" /etc/locale.gen || echo "${LOCALE} UTF-8" >> /etc/locale.ge
 locale-gen
 echo "LANG=${LOCALE}" > /etc/locale.conf
 
-echo "==> [chroot] ホスト名: ${HOSTNAME}"
-echo "${HOSTNAME}" > /etc/hostname
+echo "==> [chroot] ホスト名: ${UC_HOSTNAME}"
+echo "${UC_HOSTNAME}" > /etc/hostname
 cat > /etc/hosts <<EOF
 127.0.0.1   localhost
 ::1         localhost
-127.0.1.1   ${HOSTNAME}.localdomain ${HOSTNAME}
+127.0.1.1   ${UC_HOSTNAME}.localdomain ${UC_HOSTNAME}
 EOF
 
 # ネットワーク管理（NetworkManager）を導入して有効化。
 # ネットワーク不通などで失敗してもイメージは使えるよう best-effort。
 echo "==> [chroot] NetworkManager を導入"
-if pacman -Sy --noconfirm --needed networkmanager sudo; then
+if ${PAC} -Sy --noconfirm --needed networkmanager sudo; then
   systemctl enable NetworkManager || true
 else
   echo "!! パッケージ導入に失敗（続行）"

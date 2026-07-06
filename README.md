@@ -56,7 +56,7 @@ sudo dd if=out/uconsole-archlinux-*.img of=/dev/sdX bs=4M conv=fsync status=prog
 | -------------- | ----------------------------------- | ---------------------------- |
 | `IMG_SIZE`     | `6G`                                | イメージ全体サイズ           |
 | `BOOT_SIZE`    | `256M`                              | ブート (FAT32) パーティション |
-| `HOSTNAME`     | `uconsole`                          | ホスト名                     |
+| `UC_HOSTNAME`  | `uconsole`                          | ホスト名                     |
 | `TIMEZONE`     | `Asia/Tokyo`                        | タイムゾーン                 |
 | `LOCALE`       | `en_US.UTF-8`                       | ロケール                     |
 | `TARBALL_URL`  | ArchLinuxARM 公式 rpi-aarch64       | ベース tarball の URL        |
@@ -66,7 +66,7 @@ sudo dd if=out/uconsole-archlinux-*.img of=/dev/sdX bs=4M conv=fsync status=prog
 例:
 
 ```sh
-sudo IMG_SIZE=8G HOSTNAME=myuconsole ./build.sh
+sudo IMG_SIZE=8G UC_HOSTNAME=myuconsole ./build.sh
 ```
 
 ## 構成
