@@ -19,6 +19,11 @@ echo "==> [chroot] pacman キーリングを初期化"
 pacman-key --init          || echo "!! pacman-key --init 失敗（続行）"
 pacman-key --populate archlinuxarm || echo "!! populate 失敗（続行）"
 
+# 起動しない/画面が出ない等の初回デバッグ用に journal を永続化しておく。
+# 一度起動すればSDを抜いて /var/log/journal からブートログを回収できる。
+echo "==> [chroot] journald を永続化"
+mkdir -p /var/log/journal
+
 echo "==> [chroot] タイムゾーン: ${TIMEZONE}"
 ln -sf "/usr/share/zoneinfo/${TIMEZONE}" /etc/localtime
 

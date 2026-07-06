@@ -8,6 +8,8 @@
 
 disable_overscan=1
 dtparam=audio=on
+# シリアルコンソール(GPIO14/15)を有効化してブートログを取得できるようにする
+enable_uart=1
 
 [pi4]
 max_framebuffers=2

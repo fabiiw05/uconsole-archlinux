@@ -1,1 +1,1 @@
-root=/dev/mmcblk0p2 rw rootwait console=tty1 fsck.repair=yes selinux=0 quiet
+root=/dev/mmcblk0p2 rw rootwait fsck.repair=yes console=tty1 console=serial0,115200 loglevel=7

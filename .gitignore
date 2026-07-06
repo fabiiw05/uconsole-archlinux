@@ -15,3 +15,6 @@
 # Editor / OS
 *.swp
 .DS_Store
+
+# Collected logs
+/logs/
