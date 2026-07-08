@@ -19,6 +19,29 @@ echo "==> [chroot] pacman キーリングを初期化"
 pacman-key --init          || echo "!! pacman-key --init 失敗（続行）"
 pacman-key --populate archlinuxarm || echo "!! populate 失敗（続行）"
 
+# --- uConsole 用カーネル (kernel 6.16) の導入 -------------------------
+# ストックの linux-aarch64 / uboot-raspberrypi を除去し、
+# linux-rpi-clockwork-<module> (OuinOuin74) をローカル pkg から導入する。
+# -Rdd: 依存カスケードを止め、raspberrypi-bootloader 等ファームウェアを守る。
+echo "==> [chroot] ストックカーネル / U-Boot を除去"
+for pkg in linux-aarch64 uboot-raspberrypi; do
+  if pacman -Qq "${pkg}" &>/dev/null; then
+    echo "   - remove ${pkg}"
+    ${PAC} -Rdd --noconfirm "${pkg}" || echo "!! ${pkg} 除去に失敗（続行）"
+  fi
+done
+
+echo "==> [chroot] uConsole カーネル pkg を導入"
+if [[ -f /root/kernel.pkg.tar.xz ]]; then
+  # --overwrite: ベース由来の未所有ファイル(/boot/config.txt 等)との衝突を許容。
+  # pkg に含まれるファイルのみが対象で、ファームウェア等は影響を受けない。
+  ${PAC} -U --noconfirm --overwrite '*' /root/kernel.pkg.tar.xz \
+    || echo "!! カーネル pkg 導入に失敗（続行）"
+  rm -f /root/kernel.pkg.tar.xz
+else
+  echo "!! /root/kernel.pkg.tar.xz が無い。カーネル未導入（DSI パネルは動きません）"
+fi
+
 # 起動しない/画面が出ない等の初回デバッグ用に journal を永続化しておく。
 # 一度起動すればSDを抜いて /var/log/journal からブートログを回収できる。
 echo "==> [chroot] journald を永続化"

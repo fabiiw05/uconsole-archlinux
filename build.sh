@@ -24,12 +24,20 @@ TARBALL_URL="${TARBALL_URL:-http://os.archlinuxarm.org/os/ArchLinuxARM-rpi-aarch
 OUT_DIR="${OUT_DIR:-${SCRIPT_DIR}/out}"
 CACHE_DIR="${CACHE_DIR:-${SCRIPT_DIR}/cache}"
 WORK_DIR="${WORK_DIR:-${SCRIPT_DIR}/work}"
-KDIR="${KDIR:-${SCRIPT_DIR}/kernel}"
 SKIP_CHROOT="${SKIP_CHROOT:-}"
+
+# uConsole 用カーネル (kernel 6.16, OuinOuin74/linux-clockwork-arch のプリビルド pkg)
+# CM4 / CM5 で成果物が異なる。CM4 を既定とする。
+#   https://github.com/OuinOuin74/linux-clockwork-arch/releases
+KPKG_MODULE="${KPKG_MODULE:-cm4}"
+KPKG_VER="${KPKG_VER:-7.0.9-1}"
+KPKG_NAME="linux-rpi-clockwork-${KPKG_MODULE}-${KPKG_VER}-aarch64.pkg.tar.xz"
+KPKG_URL="${KPKG_URL:-https://github.com/OuinOuin74/linux-clockwork-arch/releases/download/v${KPKG_VER%-*}/${KPKG_NAME}}"
 
 IMG_NAME="uconsole-archlinux-$(date +%Y%m%d).img"
 IMG_PATH="${OUT_DIR}/${IMG_NAME}"
 TARBALL_PATH="${CACHE_DIR}/$(basename "${TARBALL_URL}")"
+KPKG_PATH="${CACHE_DIR}/${KPKG_NAME}"
 ROOT_MNT="${WORK_DIR}/root"
 
 # --- 前提チェック ------------------------------------------------------
@@ -67,6 +75,23 @@ fetch_tarball() {
   else
     warn "md5 が取得できないため検証をスキップ"
   fi
+}
+
+# --- 1.5 uConsole カーネル pkg の取得 ----------------------------------
+fetch_kernel_pkg() {
+  if [[ -f "${KPKG_PATH}" ]]; then
+    ok "カーネル pkg はキャッシュ済み: ${KPKG_PATH}"
+    return
+  fi
+  log "uConsole カーネル pkg を取得: ${KPKG_URL}"
+  local tmp="${KPKG_PATH}.part"
+  if [[ "${DL}" == wget ]]; then
+    wget -O "${tmp}" "${KPKG_URL}"
+  else
+    curl -fL -o "${tmp}" "${KPKG_URL}"
+  fi
+  mv "${tmp}" "${KPKG_PATH}"
+  ok "カーネル pkg 取得完了: ${KPKG_PATH}"
 }
 
 # --- 2. イメージ作成とパーティション ----------------------------------
@@ -125,7 +150,8 @@ apply_config() {
     mkdir -p "${ROOT_MNT}/boot/overlays"
     install -m 0644 "${dtbos[@]}" "${ROOT_MNT}/boot/overlays/"
   fi
-  # devterm-* の overlay は install_kernel でカーネル成果物から配置される。
+  # kernel8-cm4.img / clockworkpi-uconsole-cm4 overlay / dtb / modules は
+  # customize.sh 内の pacman -U (linux-rpi-clockwork pkg) が配置する。
 
   # /etc/fstab に boot を明示
   cat > "${ROOT_MNT}/etc/fstab" <<'EOF'
@@ -136,36 +162,16 @@ EOF
   echo "${UC_HOSTNAME}" > "${ROOT_MNT}/etc/hostname"
 }
 
-# --- 4.5 パッチ済みカーネルの導入 -------------------------------------
-# scripts/build-kernel.sh の成果物 (kernel/out, kernel/modules) があれば
-# イメージへ取り込む。無ければ Arch 標準の linux-rpi のままとなり、
-# uConsole の DSI パネルは点灯しない点を警告する。
-install_kernel() {
-  if [[ ! -f "${KDIR}/out/kernel8.img" ]]; then
-    warn "パッチ済みカーネルが未ビルドです (${KDIR}/out/kernel8.img が無い)"
-    warn "DSI パネルを使うには先に ./scripts/build-kernel.sh を実行してください"
+# --- 4.5 カーネル pkg をチルート内へ配置 ------------------------------
+# ダウンロード済みの linux-rpi-clockwork pkg を rootfs にコピーしておき、
+# customize.sh (chroot 内) で pacman -U 導入する。
+stage_kernel_pkg() {
+  if [[ ! -f "${KPKG_PATH}" ]]; then
+    warn "カーネル pkg が無い (${KPKG_PATH}) — DSI パネルは動きません"
     return
   fi
-  log "uConsole パッチ済みカーネルを導入"
-  install -m 0644 "${KDIR}/out/kernel8.img" "${ROOT_MNT}/boot/kernel8.img"
-
-  shopt -s nullglob
-  local dtbs=("${KDIR}"/out/*.dtb)
-  local dtbos=("${KDIR}"/out/overlays/*.dtbo)
-  shopt -u nullglob
-  ((${#dtbs[@]}))  && install -m 0644 "${dtbs[@]}" "${ROOT_MNT}/boot/"
-  if ((${#dtbos[@]})); then
-    mkdir -p "${ROOT_MNT}/boot/overlays"
-    install -m 0644 "${dtbos[@]}" "${ROOT_MNT}/boot/overlays/"
-  fi
-
-  # カーネルモジュール
-  if [[ -d "${KDIR}/modules/lib/modules" ]]; then
-    log "カーネルモジュールを配置"
-    mkdir -p "${ROOT_MNT}/usr/lib/modules"
-    cp -a "${KDIR}"/modules/lib/modules/* "${ROOT_MNT}/usr/lib/modules/"
-  fi
-  ok "パッチ済みカーネルの導入完了"
+  log "カーネル pkg を rootfs に配置"
+  install -m 0644 "${KPKG_PATH}" "${ROOT_MNT}/root/kernel.pkg.tar.xz"
 }
 
 # --- 5. chroot カスタマイズ -------------------------------------------
@@ -214,6 +220,31 @@ kill_chroot_procs() {
   done
 }
 
+# --- 5.5 ブート設定の再適用 -------------------------------------------
+# カーネル pkg の .install フック (patch_cmdline) はチルート内で findmnt を
+# 使い root デバイスを推定するが、/proc はホスト由来のためホストの PARTUUID
+# を書き込んでしまう。最終的に必ず自前の config.txt / cmdline.txt で上書きする。
+reapply_boot_config() {
+  log "ブート設定を再適用 (config.txt / cmdline.txt)"
+  install -m 0644 "${SCRIPT_DIR}/config/boot/config.txt"  "${ROOT_MNT}/boot/config.txt"
+  install -m 0644 "${SCRIPT_DIR}/config/boot/cmdline.txt" "${ROOT_MNT}/boot/cmdline.txt"
+
+  # initramfs が生成されているか確認（config.txt がこれを参照している）
+  local initrd="${ROOT_MNT}/boot/initramfs-linux-rpi-clockwork-${KPKG_MODULE}.img"
+  if [[ -f "${initrd}" ]]; then
+    ok "initramfs 確認: $(basename "${initrd}")"
+  else
+    warn "initramfs が見つかりません: $(basename "${initrd}")"
+    warn "config.txt の initramfs 行をコメントアウトして initramfs なしで起動させます"
+    sed -i 's#^initramfs #\#initramfs #' "${ROOT_MNT}/boot/config.txt"
+  fi
+
+  # 起動確認用に kernel8-cm4.img が配置されたか確認
+  if [[ ! -f "${ROOT_MNT}/boot/kernel8-${KPKG_MODULE}.img" ]]; then
+    warn "kernel8-${KPKG_MODULE}.img が /boot にありません。カーネル pkg 導入に失敗した可能性があります"
+  fi
+}
+
 # --- 6. 仕上げ ---------------------------------------------------------
 finalize() {
   sync
@@ -224,11 +255,13 @@ finalize() {
 
 main() {
   fetch_tarball
+  fetch_kernel_pkg
   create_image
   extract_rootfs
   apply_config
-  install_kernel
+  stage_kernel_pkg
   customize_chroot
+  reapply_boot_config
   finalize
 }
 
