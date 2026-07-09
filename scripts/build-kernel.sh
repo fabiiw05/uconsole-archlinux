@@ -51,11 +51,20 @@ apt-get install -y --no-install-recommends \\
   git bc bison flex libssl-dev make libc6-dev libncurses-dev \\
   gawk openssl libelf-dev kmod ca-certificates cpio
 
-if [ ! -d linux/.git ]; then
+# 既存の linux/ が別リポジトリ（旧 raspberrypi/linux 等）なら作り直す。
+# これを怠ると古いツリーを再利用してしまう（例: 5.10.17 がビルドされる）。
+NEED_CLONE=1
+if [ -d linux/.git ] && \\
+   [ "\$(git -C linux config --get remote.origin.url 2>/dev/null || true)" = "${KSRC_REPO}" ]; then
+  NEED_CLONE=0
+fi
+if [ "\$NEED_CLONE" = 1 ]; then
+  echo "== (re)clone ${KSRC_REPO} (${KSRC_BRANCH}) =="
   rm -rf linux
   git clone --depth 1 --branch "${KSRC_BRANCH}" "${KSRC_REPO}" linux
 fi
 cd linux
+echo "== kernel source: \$(git config --get remote.origin.url) @ \$(git rev-parse --abbrev-ref HEAD) =="
 
 export KERNEL=kernel8 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-
 make "${KDEFCONFIG}"
