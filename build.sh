@@ -26,18 +26,17 @@ CACHE_DIR="${CACHE_DIR:-${SCRIPT_DIR}/cache}"
 WORK_DIR="${WORK_DIR:-${SCRIPT_DIR}/work}"
 SKIP_CHROOT="${SKIP_CHROOT:-}"
 
-# uConsole 用カーネル (kernel 6.16, OuinOuin74/linux-clockwork-arch のプリビルド pkg)
-# CM4 / CM5 で成果物が異なる。CM4 を既定とする。
-#   https://github.com/OuinOuin74/linux-clockwork-arch/releases
-KPKG_MODULE="${KPKG_MODULE:-cm4}"
-KPKG_VER="${KPKG_VER:-7.0.9-1}"
-KPKG_NAME="linux-rpi-clockwork-${KPKG_MODULE}-${KPKG_VER}-aarch64.pkg.tar.xz"
-KPKG_URL="${KPKG_URL:-https://github.com/OuinOuin74/linux-clockwork-arch/releases/download/v${KPKG_VER%-*}/${KPKG_NAME}}"
+# uConsole 用カーネル（ak-rex/ClockworkPi-linux, rpi-6.12.y を自前ビルド）。
+# 新ロット LCD パネル対応（panel-cwu50 の id_gpio 判定 + init_sequence2）が
+# 入っており、これが無いと新パネルは横線・崩れで表示されない。
+# scripts/build-kernel.sh が kernel/out と kernel/modules に成果物を出す。
+KDIR="${KDIR:-${SCRIPT_DIR}/kernel}"
+KERNEL_OUT="${KDIR}/out"
+KERNEL_MODULES="${KDIR}/modules"
 
 IMG_NAME="uconsole-archlinux-$(date +%Y%m%d).img"
 IMG_PATH="${OUT_DIR}/${IMG_NAME}"
 TARBALL_PATH="${CACHE_DIR}/$(basename "${TARBALL_URL}")"
-KPKG_PATH="${CACHE_DIR}/${KPKG_NAME}"
 ROOT_MNT="${WORK_DIR}/root"
 
 # --- 前提チェック ------------------------------------------------------
@@ -75,23 +74,6 @@ fetch_tarball() {
   else
     warn "md5 が取得できないため検証をスキップ"
   fi
-}
-
-# --- 1.5 uConsole カーネル pkg の取得 ----------------------------------
-fetch_kernel_pkg() {
-  if [[ -f "${KPKG_PATH}" ]]; then
-    ok "カーネル pkg はキャッシュ済み: ${KPKG_PATH}"
-    return
-  fi
-  log "uConsole カーネル pkg を取得: ${KPKG_URL}"
-  local tmp="${KPKG_PATH}.part"
-  if [[ "${DL}" == wget ]]; then
-    wget -O "${tmp}" "${KPKG_URL}"
-  else
-    curl -fL -o "${tmp}" "${KPKG_URL}"
-  fi
-  mv "${tmp}" "${KPKG_PATH}"
-  ok "カーネル pkg 取得完了: ${KPKG_PATH}"
 }
 
 # --- 2. イメージ作成とパーティション ----------------------------------
@@ -151,7 +133,7 @@ apply_config() {
     install -m 0644 "${dtbos[@]}" "${ROOT_MNT}/boot/overlays/"
   fi
   # kernel8-cm4.img / clockworkpi-uconsole-cm4 overlay / dtb / modules は
-  # customize.sh 内の pacman -U (linux-rpi-clockwork pkg) が配置する。
+  # install_kernel() が自前ビルド成果物 (kernel/out, kernel/modules) から配置する。
 
   # /etc/fstab に boot を明示
   cat > "${ROOT_MNT}/etc/fstab" <<'EOF'
@@ -162,16 +144,39 @@ EOF
   echo "${UC_HOSTNAME}" > "${ROOT_MNT}/etc/hostname"
 }
 
-# --- 4.5 カーネル pkg をチルート内へ配置 ------------------------------
-# ダウンロード済みの linux-rpi-clockwork pkg を rootfs にコピーしておき、
-# customize.sh (chroot 内) で pacman -U 導入する。
-stage_kernel_pkg() {
-  if [[ ! -f "${KPKG_PATH}" ]]; then
-    warn "カーネル pkg が無い (${KPKG_PATH}) — DSI パネルは動きません"
-    return
+# --- 4.5 自前ビルドのカーネルを配置 -----------------------------------
+# scripts/build-kernel.sh が出力した kernel8.img / dtb / overlays / modules
+# を rootfs に直接展開する。config.txt は kernel=kernel8-cm4.img を参照。
+install_kernel() {
+  if [[ ! -f "${KERNEL_OUT}/kernel8.img" ]]; then
+    die "自前カーネルが未ビルドです。先に ./scripts/build-kernel.sh を実行してください（${KERNEL_OUT}/kernel8.img が必要）"
   fi
-  log "カーネル pkg を rootfs に配置"
-  install -m 0644 "${KPKG_PATH}" "${ROOT_MNT}/root/kernel.pkg.tar.xz"
+  local kver; kver="$(cat "${KERNEL_OUT}/kver.txt" 2>/dev/null || true)"
+  [[ -n "${kver}" ]] || die "kver.txt が読めません（ビルドが不完全）"
+  log "自前カーネルを配置 (kver=${kver})"
+
+  # カーネル本体（config.txt の kernel=kernel8-cm4.img に合わせる）
+  install -m 0644 "${KERNEL_OUT}/kernel8.img" "${ROOT_MNT}/boot/kernel8-cm4.img"
+
+  shopt -s nullglob
+  # dtb
+  local dtbs=("${KERNEL_OUT}"/*.dtb)
+  ((${#dtbs[@]})) && install -m 0644 "${dtbs[@]}" "${ROOT_MNT}/boot/"
+  # overlays（clockworkpi-uconsole-cm4.dtbo を含む）
+  mkdir -p "${ROOT_MNT}/boot/overlays"
+  local ovls=("${KERNEL_OUT}"/overlays/*.dtbo)
+  ((${#ovls[@]})) && install -m 0644 "${ovls[@]}" "${ROOT_MNT}/boot/overlays/"
+  [[ -f "${KERNEL_OUT}/overlays/README" ]] \
+    && install -m 0644 "${KERNEL_OUT}/overlays/README" "${ROOT_MNT}/boot/overlays/"
+  shopt -u nullglob
+
+  # modules（modules_install 済み。modules.dep 等の相対パスはそのまま有効）
+  [[ -d "${KERNEL_MODULES}/lib/modules/${kver}" ]] \
+    || die "モジュールが見つかりません: ${KERNEL_MODULES}/lib/modules/${kver}"
+  mkdir -p "${ROOT_MNT}/usr/lib/modules"
+  cp -a "${KERNEL_MODULES}/lib/modules/${kver}" "${ROOT_MNT}/usr/lib/modules/"
+
+  ok "カーネル配置完了: /boot/kernel8-cm4.img + overlays + /usr/lib/modules/${kver}"
 }
 
 # --- 5. chroot カスタマイズ -------------------------------------------
@@ -220,29 +225,19 @@ kill_chroot_procs() {
   done
 }
 
-# --- 5.5 ブート設定の再適用 -------------------------------------------
-# カーネル pkg の .install フック (patch_cmdline) はチルート内で findmnt を
-# 使い root デバイスを推定するが、/proc はホスト由来のためホストの PARTUUID
-# を書き込んでしまう。最終的に必ず自前の config.txt / cmdline.txt で上書きする。
+# --- 5.5 ブート設定の再適用・検証 -------------------------------------
+# 自前カーネル方式では pacman の .install フックが無いため config.txt を
+# 壊す要因は無いが、chroot 後に念のため再適用して整合を保証する。
+# 自前カーネルは initramfs 不要（mmc/ext4 はビルトイン）。
 reapply_boot_config() {
-  log "ブート設定を再適用 (config.txt / cmdline.txt)"
+  log "ブート設定を再適用・検証 (config.txt / cmdline.txt)"
   install -m 0644 "${SCRIPT_DIR}/config/boot/config.txt"  "${ROOT_MNT}/boot/config.txt"
   install -m 0644 "${SCRIPT_DIR}/config/boot/cmdline.txt" "${ROOT_MNT}/boot/cmdline.txt"
 
-  # initramfs が生成されているか確認（config.txt がこれを参照している）
-  local initrd="${ROOT_MNT}/boot/initramfs-linux-rpi-clockwork-${KPKG_MODULE}.img"
-  if [[ -f "${initrd}" ]]; then
-    ok "initramfs 確認: $(basename "${initrd}")"
-  else
-    warn "initramfs が見つかりません: $(basename "${initrd}")"
-    warn "config.txt の initramfs 行をコメントアウトして initramfs なしで起動させます"
-    sed -i 's#^initramfs #\#initramfs #' "${ROOT_MNT}/boot/config.txt"
-  fi
-
-  # 起動確認用に kernel8-cm4.img が配置されたか確認
-  if [[ ! -f "${ROOT_MNT}/boot/kernel8-${KPKG_MODULE}.img" ]]; then
-    warn "kernel8-${KPKG_MODULE}.img が /boot にありません。カーネル pkg 導入に失敗した可能性があります"
-  fi
+  [[ -f "${ROOT_MNT}/boot/kernel8-cm4.img" ]] \
+    || warn "kernel8-cm4.img が /boot にありません（install_kernel が失敗した可能性）"
+  [[ -f "${ROOT_MNT}/boot/overlays/clockworkpi-uconsole-cm4.dtbo" ]] \
+    || warn "clockworkpi-uconsole-cm4.dtbo が overlays にありません（新パネルが動かない可能性）"
 }
 
 # --- 6. 仕上げ ---------------------------------------------------------
@@ -255,11 +250,10 @@ finalize() {
 
 main() {
   fetch_tarball
-  fetch_kernel_pkg
   create_image
   extract_rootfs
   apply_config
-  stage_kernel_pkg
+  install_kernel
   customize_chroot
   reapply_boot_config
   finalize

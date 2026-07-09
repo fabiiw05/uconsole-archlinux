@@ -1,11 +1,12 @@
 # ============================================================
 # ClockworkPi uConsole - boot configuration (CM4)
-# Base: Arch Linux ARM rpi-aarch64 + linux-rpi-clockwork-cm4 (kernel 6.16)
-#   https://github.com/OuinOuin74/linux-clockwork-arch
+# Base: Arch Linux ARM rpi-aarch64 + 自前ビルドカーネル
+#   ak-rex/ClockworkPi-linux (rpi-6.12.y) を scripts/build-kernel.sh でビルド
 #
 # ストックの linux-aarch64 / uboot-raspberrypi は build.sh 内で除去し、
 # RPi ファームウェアから直接 kernel8-cm4.img を起動する構成。
-# DSI パネル(cwu50) は clockworkpi-uconsole-cm4 overlay + 6.16 ドライバで動作。
+# DSI パネル(cwu50) は clockworkpi-uconsole-cm4 overlay + 6.12.y ドライバで動作。
+# 新ロット LCD は panel-cwu50 が id_gpio で自動判別し init_sequence2 を使う。
 # ============================================================
 
 [all]
@@ -35,9 +36,8 @@ dtoverlay=vc4-kms-v3d-pi4,cma-384
 # オーディオ (GPIO12/13 PWM)
 dtoverlay=audremap,pins_12_13
 
-# カーネル + initramfs（pacman -U がチルート内で initramfs を生成する）
+# カーネル（自前ビルド ak-rex 6.12.y）。initramfs 不要（mmc/ext4 はビルトイン）。
 kernel=kernel8-cm4.img
-initramfs initramfs-linux-rpi-clockwork-cm4.img followkernel
 
 # SD オーバークロック（任意）
 #dtparam=sd_overclock=100
