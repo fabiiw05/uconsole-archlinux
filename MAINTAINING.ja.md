@@ -102,6 +102,27 @@ on-device で `pacman -Syu` しても通常は復活しません。念のため 
 ただしファームウェア（`raspberrypi-bootloader`）更新で `/boot` が変わる可能性は
 残るため、大きな更新の後は再確認してください。
 
+### 実機のカーネル更新（`scripts/update.sh`）
+
+カーネルはファイル注入方式（pacman パッケージではない）のため、既存インストールは
+`pacman -Syu` では新しいカーネルを取得できません（この方法で更新されるのはベース OS だけ）。
+`scripts/update.sh` はこのギャップを焼き直し無しで埋めます。実機上でリリース tarball
+（`scripts/package-kernel.sh` が生成）を取得し、カーネル/modules/DTB/overlays＋ブート設定を
+その場で配置します。`build.sh` と同じ `install_kernel_artifacts`（`lib/common.sh`）を使うため、
+イメージ側と実機側の設置経路がズレません。
+
+要点:
+
+- 導入するのは**公開済みリリースのみ**（`latest`/`--tag` の GitHub Release アセット）で、
+  ブランチ HEAD は引きません。下記の実機検証関門を保つためです。
+- リリースアセット名は**固定**（`uconsole-kernel.tar.gz`）で、
+  `.../releases/latest/download/...` の URL が安定します。サイドカー
+  `uconsole-kernel.version` により、既に最新ならダウンロードを省けます
+  （版は `/boot/uconsole-kernel.release` に記録）。
+- `kernel8-cm4.img`/`config.txt`/`cmdline.txt` を `*.bak` に退避し、旧カーネルの
+  `/usr/lib/modules/<kver>` は残すため、起動不良時は別マシンから `.bak` を戻して
+  ロールバックできます。
+
 ### pacman サンドボックス / Landlock
 
 実機での症状: `pacman -Syu` が `restricting filesystem access failed because
@@ -126,10 +147,16 @@ Landlock is not supported by the kernel!` で停止する。自前カーネル
 
 - **カーネルの PKGBUILD 化**（ファイル注入をやめる）。pacman 管理下に入れば、
   on-device のカーネル更新・巻き戻り防止が綺麗になります。本命の「Arch 流」ですが
-  作業量は大きく、今回はスコープ外。
-- **Release 配布。** 全員に 30〜60 分のビルドをさせないため、再検証を通した
-  イメージのみ（xz 圧縮）を検証済みバージョン表付きで GitHub Releases に公開。
+  作業量は大きく、今回はスコープ外。当面は下記の `scripts/update.sh`
+  （ファイル注入方式に沿った更新手段）で対応します。
+- **Release 配布。** 既存インストール向けのカーネル＋ブート設定の更新は
+  GitHub Releases 経由で既に配布済み（`scripts/package-kernel.sh` +
+  `scripts/update.sh`）。加えて、初回ユーザに 30〜60 分のビルドをさせないため、
+  再検証を通したフルイメージ（xz 圧縮）を検証済みバージョン表付きで公開することも可能。
   ~6G のサイズに注意。
+- **CI によるリリース成果物ビルド。** カーネル成果物を Docker でビルドしてリリースに
+  自動添付するワークフローも可能。ただし実機検証の関門は自動化できない（人が焼いて
+  確認してから公開する必要がある）ため、今回は見送り。
 - **バージョン固定。** 再現性が重要なら `build-kernel.sh` に `KSRC_COMMIT`、
   `build.sh` に版付き `TARBALL_URL` を通し、上表の値で pin します。
 
@@ -140,5 +167,16 @@ Landlock is not supported by the kernel!` で停止する。自前カーネル
    （CI が push/PR 毎に実行）。
 3. フルビルド: `./scripts/build-kernel.sh` → `sudo ./build.sh`。
 4. フラッシュして上記の実機再検証チェックリストを通す。
+   **これが関門です。** 通していないリリースは公開しないこと。
 5. 検証済みバージョン表を更新（本ファイルと `MAINTAINING.md` の両方）。
-6. （任意）xz 圧縮したイメージを GitHub Releases にアップロード。
+6. 実機用カーネル更新を梱包・公開し、既存インストールが `update.sh` で取得できる
+   ようにする:
+
+   ```sh
+   TAG=v$(date +%Y%m%d) ./scripts/package-kernel.sh
+   gh release create "$TAG" out/uconsole-kernel.tar.gz out/uconsole-kernel.version
+   ```
+
+   アセット名（`uconsole-kernel.tar.gz` / `.version`）は変えないこと。`update.sh` の
+   latest-release URL がリリース間で安定していることに依存します。
+7. （任意）同じリリースに xz 圧縮したフルイメージもアップロード。

@@ -85,6 +85,31 @@ Example:
 sudo IMG_SIZE=8G UC_HOSTNAME=myuconsole ./build.sh
 ```
 
+## Updating an already-running device
+
+You do **not** need to re-flash to pick up a newer kernel. The base Arch Linux
+ARM system updates itself with `sudo pacman -Syu` (rolling); the self-built
+**kernel + boot config** are delivered separately via GitHub Releases and
+installed in place:
+
+```sh
+# on the uConsole itself
+sudo ./scripts/update.sh            # install the latest released kernel
+sudo ./scripts/update.sh --force    # reinstall / re-apply explicitly
+sudo reboot                         # changes apply on reboot
+```
+
+`update.sh` downloads the release tarball, backs up the current
+`/boot/kernel8-cm4.img` (+ `config.txt` / `cmdline.txt`) to `*.bak`, installs the
+new kernel / modules / DTBs / overlays and boot config, then records the version
+in `/boot/uconsole-kernel.release` (so re-running is a no-op when already
+current). Only **published, hardware-verified** releases are installed — never a
+branch HEAD. If a new kernel won't boot, restore `kernel8-cm4.img.bak` from any
+machine that can mount the FAT32 boot partition.
+
+> Maintainers cut a release with `scripts/package-kernel.sh` — see
+> [MAINTAINING.md](MAINTAINING.md).
+
 ## Layout
 
 ```
@@ -98,6 +123,8 @@ scripts/
   build-kernel.sh       Cross-build ak-rex/ClockworkPi-linux (rpi-6.12.y)
   customize.sh          In-chroot customization (locale, NetworkManager, etc.)
   collect-logs.sh       Debug helper to pull boot logs off a booted SD card
+  package-kernel.sh     Package kernel artifacts into a release tarball
+  update.sh             On-device kernel/boot updater (no re-flash)
 cache/                  Downloaded tarballs (gitignored)
 kernel/                 Kernel build artifacts out/ modules/ (gitignored)
 ```

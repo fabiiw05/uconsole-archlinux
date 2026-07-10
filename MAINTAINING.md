@@ -107,6 +107,29 @@ on-device `pacman -Syu` will not normally reinstall them. As belt-and-suspenders
 clobber the `/boot` setup. Firmware (`raspberrypi-bootloader`) updates can still
 change `/boot`; re-check after a large upgrade.
 
+### On-device kernel updates (`scripts/update.sh`)
+
+Because the kernel is file-injected (not a pacman package), existing installs
+cannot get a newer kernel from `pacman -Syu` — only the base OS updates that way.
+`scripts/update.sh` closes that gap without a re-flash: on the device it pulls a
+release tarball (built by `scripts/package-kernel.sh`) and installs the
+kernel/modules/DTBs/overlays + boot config in place, via the same
+`install_kernel_artifacts` helper (`lib/common.sh`) that `build.sh` uses, so the
+on-image and on-device paths cannot drift.
+
+Key properties:
+
+- It installs **only published releases** (the `latest`/`--tag` GitHub Release
+  asset), never a branch HEAD — this preserves the hardware-verification gate
+  below.
+- The release asset name is **stable** (`uconsole-kernel.tar.gz`) so the
+  `.../releases/latest/download/...` URL is fixed; a sidecar
+  `uconsole-kernel.version` lets the device skip the download when already
+  current (recorded in `/boot/uconsole-kernel.release`).
+- It backs up `kernel8-cm4.img`/`config.txt`/`cmdline.txt` to `*.bak` and leaves
+  the previous kernel's `/usr/lib/modules/<kver>` in place, so a bad kernel can
+  be rolled back by restoring the `.bak` from any machine.
+
 ### pacman sandbox / Landlock
 
 Symptom on the device: `pacman -Syu` dies with `restricting filesystem access
@@ -132,9 +155,16 @@ Watch the front-page announcements and forum on
 - **Package the kernel as a PKGBUILD** instead of file-injection. Under pacman
   management, on-device kernel updates and rollback protection become clean.
   This is the "proper Arch" approach; larger effort, out of current scope.
-- **Release distribution.** To avoid making everyone run a 30-60 min build,
-  publish only re-verified images (xz-compressed) on GitHub Releases with the
-  verified-version table attached. Mind the ~6G image size.
+  `scripts/update.sh` (below) is the interim, file-injection-native updater.
+- **Release distribution.** Kernel + boot-config updates for existing installs
+  are already shipped via GitHub Releases (`scripts/package-kernel.sh` +
+  `scripts/update.sh`). Optionally also publish full re-verified images
+  (xz-compressed) with the verified-version table attached, to avoid a 30-60 min
+  build for first-time users. Mind the ~6G image size.
+- **CI-built release assets.** A workflow could build the kernel artifacts in
+  Docker and attach them to a release automatically. Deferred because the
+  hardware-verification gate cannot be automated — a human must flash and verify
+  before a release is published.
 - **Version pinning.** If reproducibility matters, thread `KSRC_COMMIT` through
   `build-kernel.sh` and a versioned `TARBALL_URL` through `build.sh`, then pin
   the values in the table above.
@@ -146,5 +176,16 @@ Watch the front-page announcements and forum on
    this on every push/PR).
 3. Full build: `./scripts/build-kernel.sh` then `sudo ./build.sh`.
 4. Flash and pass the on-hardware re-verification checklist above.
+   **This is the gate:** do not publish a release that has not passed it.
 5. Update the verified-versions table (both this file and `MAINTAINING.ja.md`).
-6. (Optional) Upload the xz-compressed image to GitHub Releases.
+6. Package the on-device kernel update and publish it so existing installs can
+   `update.sh` to it:
+
+   ```sh
+   TAG=v$(date +%Y%m%d) ./scripts/package-kernel.sh
+   gh release create "$TAG" out/uconsole-kernel.tar.gz out/uconsole-kernel.version
+   ```
+
+   Keep the asset names as-is (`uconsole-kernel.tar.gz` / `.version`) — the
+   `update.sh` latest-release URL depends on them being stable across releases.
+7. (Optional) Also upload the xz-compressed full image to the same release.

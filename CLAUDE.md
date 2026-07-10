@@ -39,7 +39,9 @@ Key env overrides: `KSRC_BRANCH`/`KDEFCONFIG`/`JOBS`/`BUILD_IMAGE` (build-kernel
 
 ## Architecture & non-obvious invariants
 
-`build.sh` orchestrates (see `main()`): fetch ALARM `rpi-aarch64` tarball → partition/loop image (FAT32 boot + ext4 root) → extract rootfs → `apply_config` → `customize_chroot` → `install_kernel` → `reapply_boot_config`. `scripts/*.sh` and `build.sh` all source `lib/common.sh` (`log/ok/warn/die`, `require_root`, `require_cmds`, and a `push_cleanup`/trap-based cleanup stack for loop devices and mounts).
+`build.sh` orchestrates (see `main()`): fetch ALARM `rpi-aarch64` tarball → partition/loop image (FAT32 boot + ext4 root) → extract rootfs → `apply_config` → `customize_chroot` → `install_kernel` → `reapply_boot_config`. `scripts/*.sh` and `build.sh` all source `lib/common.sh` (`log/ok/warn/die`, `require_root`, `require_cmds`, a `push_cleanup`/trap-based cleanup stack for loop devices and mounts, and `install_kernel_artifacts <out> <modules> <dest_root>`).
+
+**On-device updates:** the kernel is file-injected, not a pacman package, so existing installs get kernel/boot updates via `scripts/update.sh` (on the device), which installs a GitHub Release tarball produced by `scripts/package-kernel.sh` using the *same* `install_kernel_artifacts` helper as `build.sh` (so the two paths can't drift). Only published, hardware-verified releases are pulled — never a branch HEAD. Base OS updates are separate (`pacman -Syu`).
 
 Understand these before editing the pipeline — they are landmines that caused real, hard-to-debug failures:
 
