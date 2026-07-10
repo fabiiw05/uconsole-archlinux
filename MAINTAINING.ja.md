@@ -102,6 +102,21 @@ on-device で `pacman -Syu` しても通常は復活しません。念のため 
 ただしファームウェア（`raspberrypi-bootloader`）更新で `/boot` が変わる可能性は
 残るため、大きな更新の後は再確認してください。
 
+### pacman サンドボックス / Landlock
+
+実機での症状: `pacman -Syu` が `restricting filesystem access failed because
+Landlock is not supported by the kernel!` で停止する。自前カーネル
+（`bcm2711_defconfig`）には `CONFIG_SECURITY_LANDLOCK` が無く、pacman 7 の
+ダウンロード用サンドボックスを起動できないためです。`customize.sh` が
+`/etc/pacman.conf` の `[options]` セクションに `DisableSandbox` を書き込むので、
+配布イメージでは問題は起きません。
+
+無効化で失われるのはネットワーク側ダウンローダの隔離だけです。GPG 署名検証
+（`SigLevel`）は従来どおり効くため、パッケージの整合性は変わりません。サンド
+ボックスを復活させたい場合は `CONFIG_SECURITY_LANDLOCK=y` を有効にしたカーネル
+再ビルドが必要です（defconfig では無効）。この変更より前に焼いた実機では、
+`[options]` に手動で `DisableSandbox` を追記してください。
+
 ### ALARM 情報の追い方
 
 [archlinuxarm.org](https://archlinuxarm.org/) のフロントページ告知・forum、GitHub の

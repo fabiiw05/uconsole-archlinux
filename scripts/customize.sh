@@ -50,6 +50,16 @@ if ! grep -q '^IgnorePkg' /etc/pacman.conf; then
     || echo 'IgnorePkg = linux-aarch64 uboot-raspberrypi' >> /etc/pacman.conf
 fi
 
+# Disable pacman's download sandbox on the target system too. Our self-built
+# kernel (bcm2711_defconfig) has no CONFIG_SECURITY_LANDLOCK, so an on-device
+# `pacman -Syu` otherwise dies with "Landlock is not supported by the kernel".
+# GPG signature verification (SigLevel) is unaffected; only the network-facing
+# downloader's isolation is dropped. Insert inside [options] so it takes effect.
+echo "==> [chroot] disabling pacman sandbox (kernel lacks Landlock)"
+if ! grep -q '^DisableSandbox' /etc/pacman.conf; then
+  sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf
+fi
+
 # Persist the journal for first-boot debugging (no display / no boot, etc.).
 # Once it has booted, you can pull /var/log/journal off the SD to inspect it.
 echo "==> [chroot] enabling persistent journald"

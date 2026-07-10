@@ -107,6 +107,20 @@ on-device `pacman -Syu` will not normally reinstall them. As belt-and-suspenders
 clobber the `/boot` setup. Firmware (`raspberrypi-bootloader`) updates can still
 change `/boot`; re-check after a large upgrade.
 
+### pacman sandbox / Landlock
+
+Symptom on the device: `pacman -Syu` dies with `restricting filesystem access
+failed because Landlock is not supported by the kernel!`. Our self-built kernel
+(`bcm2711_defconfig`) has no `CONFIG_SECURITY_LANDLOCK`, so pacman 7's download
+sandbox cannot start. `customize.sh` writes `DisableSandbox` into the
+`[options]` section of `/etc/pacman.conf`, so shipped images are unaffected.
+
+This drops only the network-facing downloader's isolation; GPG signature
+verification (`SigLevel`) still applies, so package integrity is unchanged. To
+restore the sandbox instead, a kernel rebuild with `CONFIG_SECURITY_LANDLOCK=y`
+would be required (not enabled by the defconfig). For an already-flashed device
+that predates this change, add `DisableSandbox` under `[options]` by hand.
+
 ### Tracking ALARM news
 
 Watch the front-page announcements and forum on
