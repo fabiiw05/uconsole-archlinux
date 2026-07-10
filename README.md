@@ -1,35 +1,38 @@
+English | [日本語](README.ja.md)
+
 # uconsole-archlinux
 
-ClockworkPi **uConsole (CM4)** 向けの Arch Linux ARM (aarch64) SD カードイメージを
-ビルドするためのスクリプト群です。
+Scripts that build a bootable **Arch Linux ARM (aarch64) SD-card image for the
+ClockworkPi uConsole (CM4)**.
 
-Arch Linux ARM 公式の Raspberry Pi 用 tarball (`rpi-aarch64`) をベースに、
-uConsole 固有のブート設定（DSI ディスプレイ・オーディオ等）と、uConsole 対応の
-**自前ビルドカーネル**を組み込んだイメージを生成します。
+Based on the official Arch Linux ARM Raspberry Pi tarball (`rpi-aarch64`), the
+image bakes in uConsole-specific boot configuration (DSI display, audio, etc.)
+and a **self-built kernel** with uConsole support.
 
 > [!IMPORTANT]
-> uConsole の 5 インチ DSI パネル (cwu50)・PMU・バックライト等は Arch 標準の
-> `linux-aarch64` では動作しません。さらに **2026 年以降の新ロットはパネルの
-> メーカー/仕様が変わり**、対応パッチの無いカーネル（旧 ClockworkPi 5.10 系や
-> OuinOuin74 6.16 など）では **バックライトは点くが横線・崩れ・真っ黒**になります。
-> 本リポジトリは **ak-rex/ClockworkPi-linux (`rpi-6.12.y`)** を自前ビルドします。
-> このツリーの `panel-cwu50` ドライバは **`id_gpio` で新旧パネルを自動判別**し
-> (`is_new_panel` → `cwu50_init_sequence2()`)、新ロットでも正しく表示します。
-> 詳細は [カーネルについて](#カーネルについて) を参照。
+> The uConsole's 5-inch DSI panel (cwu50), PMU, backlight, etc. do **not** work
+> with Arch's stock `linux-aarch64`. Moreover, **the 2026-and-later new batch
+> changed the panel vendor/spec**, and kernels without the corresponding patch
+> (old ClockworkPi 5.10, OuinOuin74 6.16, ...) leave the **backlight on but the
+> panel showing horizontal lines / garbled / black**. This repo builds
+> **ak-rex/ClockworkPi-linux (`rpi-6.12.y`)** from source. Its `panel-cwu50`
+> driver **auto-detects old vs new panels via `id_gpio`**
+> (`is_new_panel` → `cwu50_init_sequence2()`), driving the new batch correctly.
+> See [About the kernel](#about-the-kernel).
 
-## 必要なもの
+## Requirements
 
-- ビルドは **Linux ホスト上で root 権限** で実行します（loop device を使用）。
-- カーネルビルドに **docker**（`ubuntu:24.04` イメージ内でクロスコンパイル）。
-- 依存コマンド:
-  - `docker`（カーネルビルド）
-  - `wget` または `curl`
-  - `bsdtar`（`libarchive`）
-  - `mkfs.vfat`（`dosfstools`）, `mkfs.ext4`（`e2fsprogs`）
-  - `sfdisk`, `losetup`（`util-linux`）
-  - （chroot カスタマイズを使う場合）`qemu-aarch64-static` + `binfmt`（`qemu-user-static`）
+- The build runs **as root on a Linux host** (it uses loop devices).
+- **docker** for the kernel build (cross-compiled inside the `ubuntu:24.04` image).
+- Required commands:
+  - `docker` (kernel build)
+  - `wget` or `curl`
+  - `bsdtar` (`libarchive`)
+  - `mkfs.vfat` (`dosfstools`), `mkfs.ext4` (`e2fsprogs`)
+  - `sfdisk`, `losetup` (`util-linux`)
+  - (for chroot customization) `qemu-aarch64-static` + `binfmt` (`qemu-user-static`)
 
-Arch ホストでの一括インストール例:
+One-shot install on an Arch host:
 
 ```sh
 sudo pacman -S --needed docker wget libarchive dosfstools e2fsprogs util-linux \
@@ -37,95 +40,120 @@ sudo pacman -S --needed docker wget libarchive dosfstools e2fsprogs util-linux \
 sudo systemctl start docker
 ```
 
-## 使い方
+## Usage
 
 ```sh
-# 1. カーネルをビルド（初回のみ。30〜60 分。docker 内でクロスコンパイル）
+# 1. Build the kernel (first time only; 30-60 min; cross-compiled in docker)
 ./scripts/build-kernel.sh
 
-# 2. SD カードイメージをビルド（自前カーネルを取り込む）
+# 2. Build the SD-card image (pulls in the self-built kernel)
 sudo ./build.sh
 ```
 
-`build-kernel.sh` は成果物を `kernel/out`（kernel8.img・dtb・overlays）と
-`kernel/modules` に出力し、`build.sh` がそれらをイメージへ直接配置します。
-ベース tarball（約 800MB）は初回のみ `cache/` に保存されます。
+`build-kernel.sh` emits its artifacts into `kernel/out` (kernel8.img, dtb,
+overlays) and `kernel/modules`, and `build.sh` deploys them directly into the
+image. The base tarball (~800MB) is cached under `cache/` on the first run.
 
-生成物: `out/uconsole-archlinux-YYYYMMDD.img`
+Output: `out/uconsole-archlinux-YYYYMMDD.img`
 
-SD カードへの書き込み（デバイス名は要確認、**間違えると別ドライブを破壊します**）:
+Write to an SD card (verify the device name — **the wrong device destroys
+another drive**):
 
 ```sh
 sudo dd if=out/uconsole-archlinux-*.img of=/dev/sdX bs=4M conv=fsync status=progress
 ```
 
-### 主な設定（環境変数で上書き可能）
+### Main settings (overridable via environment variables)
 
-| 変数           | 既定値                              | 説明                          |
-| -------------- | ----------------------------------- | ----------------------------- |
-| `IMG_SIZE`     | `6G`                                | イメージ全体サイズ            |
-| `BOOT_SIZE`    | `256M`                              | ブート (FAT32) パーティション |
-| `UC_HOSTNAME`  | `uconsole`                          | ホスト名                      |
-| `TIMEZONE`     | `Asia/Tokyo`                        | タイムゾーン                  |
-| `LOCALE`       | `en_US.UTF-8`                       | ロケール                      |
-| `TARBALL_URL`  | ArchLinuxARM 公式 rpi-aarch64       | ベース tarball の URL         |
-| `KSRC_BRANCH`  | `rpi-6.12.y`                        | ビルドするカーネルのブランチ  |
-| `KDEFCONFIG`   | `bcm2711_defconfig`                 | カーネル defconfig（CM4）     |
-| `JOBS`         | `nproc`                             | カーネルビルドの並列数        |
-| `OUT_DIR`      | `./out`                             | 出力先                        |
-| `SKIP_CHROOT`  | (未設定)                            | `1` で chroot カスタマイズ省略 |
+| Variable      | Default                             | Description                     |
+| ------------- | ----------------------------------- | ------------------------------- |
+| `IMG_SIZE`    | `6G`                                | Total image size                |
+| `BOOT_SIZE`   | `256M`                              | Boot (FAT32) partition          |
+| `UC_HOSTNAME` | `uconsole`                          | Hostname                        |
+| `TIMEZONE`    | `Asia/Tokyo`                        | Timezone                        |
+| `LOCALE`      | `en_US.UTF-8`                       | Locale                          |
+| `TARBALL_URL` | ArchLinuxARM official rpi-aarch64   | Base tarball URL                |
+| `KSRC_BRANCH` | `rpi-6.12.y`                        | Kernel branch to build          |
+| `KDEFCONFIG`  | `bcm2711_defconfig`                 | Kernel defconfig (CM4)          |
+| `JOBS`        | `nproc`                             | Kernel build parallelism        |
+| `OUT_DIR`     | `./out`                             | Output directory                |
+| `SKIP_CHROOT` | (unset)                             | `1` to skip chroot customization |
 
-例:
+Example:
 
 ```sh
 sudo IMG_SIZE=8G UC_HOSTNAME=myuconsole ./build.sh
 ```
 
-## 構成
+## Layout
 
 ```
-build.sh                メインのビルドスクリプト（自前カーネルを取り込む）
-lib/common.sh           共通ヘルパー（ログ・依存チェック・クリーンアップ）
+build.sh                Main build script (pulls in the self-built kernel)
+lib/common.sh           Shared helpers (logging, dependency checks, cleanup)
 config/
-  boot/config.txt       uConsole CM4 用ブートコンフィグ
-  boot/cmdline.txt      カーネルコマンドライン
-  overlays/             追加の .dtbo を置く場所（任意）
+  boot/config.txt       Boot config for uConsole CM4
+  boot/cmdline.txt      Kernel command line
+  overlays/             Place extra .dtbo files here (optional)
 scripts/
-  build-kernel.sh       ak-rex/ClockworkPi-linux (rpi-6.12.y) をクロスビルド
-  customize.sh          chroot 内で実行されるカスタマイズ（ロケール・NM 等）
-  collect-logs.sh       起動後の SD からブートログを回収するデバッグ補助
-cache/                  ダウンロードした tarball（.gitignore）
-kernel/                 カーネルビルド成果物 out/ modules/（.gitignore）
+  build-kernel.sh       Cross-build ak-rex/ClockworkPi-linux (rpi-6.12.y)
+  customize.sh          In-chroot customization (locale, NetworkManager, etc.)
+  collect-logs.sh       Debug helper to pull boot logs off a booted SD card
+cache/                  Downloaded tarballs (gitignored)
+kernel/                 Kernel build artifacts out/ modules/ (gitignored)
 ```
 
-## カーネルについて
+## About the kernel
 
-uConsole の DSI パネル（cwu50）・PMU・バックライト等は Arch 標準カーネルでは
-動作しません。加えて **2026 年以降の新ロットはパネルの仕様が変更**され、
-新パネル対応の入っていないカーネルでは横線・崩れ・真っ黒になります
-（ClockworkPi フォーラムの既知問題。GPIO8 を新パネルの id_gpio に使う等）。
+The uConsole's DSI panel (cwu50), PMU, backlight, etc. do not work with the
+stock Arch kernel. In addition, **the 2026-and-later new batch changed the panel
+spec**, and kernels without new-panel support show horizontal lines / garbled /
+black (a known issue on the ClockworkPi forum; the new panel uses GPIO8 as its
+`id_gpio`, etc.).
 
-本リポジトリは **ak-rex/ClockworkPi-linux の `rpi-6.12.y`**（Rex が公式イメージで
-使うツリー）を自前クロスビルドします。ポイントは `panel-cwu50` ドライバ:
+This repo cross-builds **ak-rex/ClockworkPi-linux `rpi-6.12.y`** (the tree Rex
+uses for the official images) from source. The key is the `panel-cwu50` driver:
 
 ```c
 ctx->id_gpio = devm_gpiod_get_optional(dev, "reset", GPIOD_IN);
 ctx->is_new_panel = gpiod_get_value_cansleep(ctx->id_gpio);
 ...
-if (ctx->is_new_panel) cwu50_init_sequence2(ctx);  /* 新ロット */
-else                   cwu50_init_sequence(ctx);   /* 旧ロット */
+if (ctx->is_new_panel) cwu50_init_sequence2(ctx);  /* new batch */
+else                   cwu50_init_sequence(ctx);   /* old batch */
 ```
 
-- `scripts/build-kernel.sh` が docker 内で `bcm2711_defconfig` をビルド
-- `kernel8.img`・dtb・overlays（`clockworkpi-uconsole-cm4.dtbo` 含む）・modules を出力
-- `build.sh` が `/boot/kernel8-cm4.img` 等として配置（RPi ファームウェアから直接起動）
-- initramfs 不要（mmc/ext4 はビルトイン）
+- `scripts/build-kernel.sh` builds `bcm2711_defconfig` inside docker.
+- It emits `kernel8.img`, dtb, overlays (including
+  `clockworkpi-uconsole-cm4.dtbo`), and modules.
+- `build.sh` deploys them as `/boot/kernel8-cm4.img` etc. (booted directly by
+  the RPi firmware).
+- No initramfs is needed (mmc/ext4 are built-in).
 
-`KSRC_BRANCH` / `KDEFCONFIG` でブランチや defconfig を切り替えられます。
+Use `KSRC_BRANCH` / `KDEFCONFIG` to switch the branch or defconfig.
 
-## ステータス
+## Status
 
-- [x] ベースイメージのビルドパイプライン
-- [x] uConsole CM4 用ブート設定
-- [x] 新ロットパネル対応カーネル（ak-rex 6.12.y）の自前ビルド＆取り込み
-- [x] 実機での動作確認（新ロット DSI パネル表示）✅ 2026-07-10
+- [x] Base image build pipeline
+- [x] Boot config for uConsole CM4
+- [x] Self-built new-batch-capable kernel (ak-rex 6.12.y) built and integrated
+- [x] Verified on real hardware (new-batch DSI panel display) ✅ 2026-07-10
+
+## Maintenance
+
+For the upstream-tracking policy (ak-rex kernel / ArchLinuxARM), handling
+keyring expiry, the on-hardware re-verification checklist, and the recorded
+verified versions, see [MAINTAINING.md](MAINTAINING.md).
+
+## License / Credits
+
+The **scripts** in this repo are under the [MIT License](LICENSE) (© 2026 fabiiw05).
+
+However, the **artifacts** that get built/downloaded follow **their own licenses**:
+
+- **Kernel**: [ak-rex/ClockworkPi-linux](https://github.com/ak-rex/ClockworkPi-linux)
+  (`rpi-6.12.y`, GPL-2.0), including the new-batch-capable `panel-cwu50`.
+- **rootfs**: the licenses of the individual [Arch Linux ARM](https://archlinuxarm.org/)
+  packages.
+
+Credits: [ClockworkPi](https://www.clockworkpi.com/) /
+[ak-rex](https://github.com/ak-rex) (maintaining the uConsole kernel tree) /
+[Arch Linux ARM](https://archlinuxarm.org/).

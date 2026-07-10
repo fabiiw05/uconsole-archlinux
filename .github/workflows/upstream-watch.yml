@@ -1,0 +1,75 @@
+name: upstream-watch
+
+# Watch the ak-rex/ClockworkPi-linux kernel branch. When its HEAD drifts from
+# the commit recorded in MAINTAINING.md ("Verified versions" table), open an
+# issue so a maintainer can rebuild and re-verify on hardware.
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'   # every Monday 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  KSRC_REPO: https://github.com/ak-rex/ClockworkPi-linux.git
+  KSRC_BRANCH: rpi-6.12.y
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compare upstream HEAD against the recorded commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # Recorded commit from the "Kernel commit" row of MAINTAINING.md.
+          recorded="$(grep -oiE '[0-9a-f]{40}' MAINTAINING.md | head -n1 || true)"
+          if [ -z "${recorded}" ]; then
+            echo "Could not find a recorded 40-hex commit in MAINTAINING.md; skipping."
+            exit 0
+          fi
+
+          upstream="$(git ls-remote "${KSRC_REPO}" "refs/heads/${KSRC_BRANCH}" | cut -f1)"
+          if [ -z "${upstream}" ]; then
+            echo "Could not resolve ${KSRC_BRANCH} on ${KSRC_REPO}; skipping."
+            exit 0
+          fi
+
+          echo "recorded=${recorded}"
+          echo "upstream=${upstream}"
+
+          if [ "${recorded}" = "${upstream}" ]; then
+            echo "Up to date. No issue needed."
+            exit 0
+          fi
+
+          short="${upstream:0:12}"
+          title="Upstream kernel drift: ${KSRC_BRANCH} moved to ${short}"
+
+          # Avoid duplicate issues for the same upstream commit.
+          existing="$(gh issue list --state open --search "${short} in:title" --json number --jq 'length')"
+          if [ "${existing}" != "0" ]; then
+            echo "An open issue for ${short} already exists; skipping."
+            exit 0
+          fi
+
+          body="$(printf '%s\n' \
+            "\`${KSRC_REPO}\` branch \`${KSRC_BRANCH}\` has advanced." \
+            "" \
+            "- Recorded (MAINTAINING.md): \`${recorded}\`" \
+            "- Current upstream HEAD:     \`${upstream}\`" \
+            "" \
+            "Rebuild the kernel, run the on-hardware re-verification checklist in" \
+            "MAINTAINING.md, and update the \"Verified versions\" table (both" \
+            "MAINTAINING.md and MAINTAINING.ja.md) if it passes." \
+            "" \
+            "_Opened automatically by the upstream-watch workflow._")"
+
+          gh issue create --title "${title}" --body "${body}"

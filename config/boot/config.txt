@@ -1,12 +1,13 @@
 # ============================================================
 # ClockworkPi uConsole - boot configuration (CM4)
-# Base: Arch Linux ARM rpi-aarch64 + 自前ビルドカーネル
-#   ak-rex/ClockworkPi-linux (rpi-6.12.y) を scripts/build-kernel.sh でビルド
+# Base: Arch Linux ARM rpi-aarch64 + self-built kernel
+#   ak-rex/ClockworkPi-linux (rpi-6.12.y) built via scripts/build-kernel.sh
 #
-# ストックの linux-aarch64 / uboot-raspberrypi は build.sh 内で除去し、
-# RPi ファームウェアから直接 kernel8-cm4.img を起動する構成。
-# DSI パネル(cwu50) は clockworkpi-uconsole-cm4 overlay + 6.12.y ドライバで動作。
-# 新ロット LCD は panel-cwu50 が id_gpio で自動判別し init_sequence2 を使う。
+# The stock linux-aarch64 / uboot-raspberrypi are removed in build.sh, and the
+# RPi firmware boots kernel8-cm4.img directly.
+# The DSI panel (cwu50) works via the clockworkpi-uconsole-cm4 overlay + the
+# 6.12.y driver. For the new-batch LCD, panel-cwu50 auto-detects via id_gpio
+# and uses init_sequence2.
 # ============================================================
 
 [all]
@@ -17,7 +18,7 @@ max_framebuffers=2
 disable_overscan=1
 dtparam=audio=on
 dtparam=ant2
-# シリアルコンソール(GPIO14/15, 115200)でブートログを取得できるようにする
+# Enable the serial console (GPIO14/15, 115200) to capture boot logs.
 enable_uart=1
 
 # ============================================================
@@ -25,19 +26,19 @@ enable_uart=1
 # ============================================================
 [cm4]
 otg_mode=1
-# uConsole 専用 overlay（clockworkpi-uconsole-cm4）
+# uConsole-specific overlay (clockworkpi-uconsole-cm4)
 dtoverlay=clockworkpi-uconsole-cm4
-# バッテリ容量を指定する場合の例:
+# Example if you want to specify battery capacity:
 #dtoverlay=clockworkpi-uconsole-cm4,batt_uah=7000000,vnom_uv=3700000
 
 # KMS / GPU
 dtoverlay=vc4-kms-v3d-pi4,cma-384
 
-# オーディオ (GPIO12/13 PWM)
+# Audio (GPIO12/13 PWM)
 dtoverlay=audremap,pins_12_13
 
-# カーネル（自前ビルド ak-rex 6.12.y）。initramfs 不要（mmc/ext4 はビルトイン）。
+# Kernel (self-built ak-rex 6.12.y). No initramfs (mmc/ext4 are built-in).
 kernel=kernel8-cm4.img
 
-# SD オーバークロック（任意）
+# SD overclock (optional)
 #dtparam=sd_overclock=100

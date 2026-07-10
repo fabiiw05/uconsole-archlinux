@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-A set of Bash scripts that build a bootable **Arch Linux ARM (aarch64) SD-card image for the ClockworkPi uConsole (CM4)**. There is no application code — everything assembles a disk image on a Linux host. Comments, logs, and docs are written in **Japanese**; match that style.
+A set of Bash scripts that build a bootable **Arch Linux ARM (aarch64) SD-card image for the ClockworkPi uConsole (CM4)**. There is no application code — everything assembles a disk image on a Linux host.
+
+**Language convention:** code comments and script logs/`echo` output are in **English**; match that style. User-facing docs are **bilingual, split by file**: English is the default (`README.md`, `MAINTAINING.md`) and Japanese lives in `*.ja.md` (`README.ja.md`, `MAINTAINING.ja.md`), cross-linked with a language switcher at the top. Keep both language versions of a doc in sync when editing.
 
 ## Build & flash (two stages, order matters)
 
