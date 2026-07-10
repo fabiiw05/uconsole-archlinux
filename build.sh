@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# uConsole (CM4) 向け Arch Linux ARM (aarch64) SD カードイメージビルダー
+# Arch Linux ARM (aarch64) SD-card image builder for the ClockworkPi uConsole (CM4).
 #
 #   sudo ./build.sh
 #
-# 主要な設定は環境変数で上書き可能（README 参照）。
+# Most settings can be overridden via environment variables (see README).
 #
 set -euo pipefail
 
@@ -12,11 +12,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
 
-# --- 設定 --------------------------------------------------------------
+# --- Settings ----------------------------------------------------------
 IMG_SIZE="${IMG_SIZE:-6G}"
 BOOT_SIZE="${BOOT_SIZE:-256M}"
-# NOTE: bash はマシン名を組み込み変数 HOSTNAME に自動設定するため、その名前は
-# 使わない（sudo 実行時にホストのマシン名を拾ってしまう）。UC_HOSTNAME を使う。
+# NOTE: bash auto-populates the builtin HOSTNAME variable, so we avoid that
+# name (under sudo it would pick up the host machine's name). Use UC_HOSTNAME.
 UC_HOSTNAME="${UC_HOSTNAME:-uconsole}"
 TIMEZONE="${TIMEZONE:-Asia/Tokyo}"
 LOCALE="${LOCALE:-en_US.UTF-8}"
@@ -26,10 +26,10 @@ CACHE_DIR="${CACHE_DIR:-${SCRIPT_DIR}/cache}"
 WORK_DIR="${WORK_DIR:-${SCRIPT_DIR}/work}"
 SKIP_CHROOT="${SKIP_CHROOT:-}"
 
-# uConsole 用カーネル（ak-rex/ClockworkPi-linux, rpi-6.12.y を自前ビルド）。
-# 新ロット LCD パネル対応（panel-cwu50 の id_gpio 判定 + init_sequence2）が
-# 入っており、これが無いと新パネルは横線・崩れで表示されない。
-# scripts/build-kernel.sh が kernel/out と kernel/modules に成果物を出す。
+# uConsole kernel (ak-rex/ClockworkPi-linux, rpi-6.12.y, built from source).
+# It carries new-batch LCD panel support (panel-cwu50 id_gpio detection +
+# init_sequence2); without it the new panel shows horizontal lines / garbled.
+# scripts/build-kernel.sh emits artifacts into kernel/out and kernel/modules.
 KDIR="${KDIR:-${SCRIPT_DIR}/kernel}"
 KERNEL_OUT="${KDIR}/out"
 KERNEL_MODULES="${KDIR}/modules"
@@ -39,22 +39,22 @@ IMG_PATH="${OUT_DIR}/${IMG_NAME}"
 TARBALL_PATH="${CACHE_DIR}/$(basename "${TARBALL_URL}")"
 ROOT_MNT="${WORK_DIR}/root"
 
-# --- 前提チェック ------------------------------------------------------
+# --- Prerequisite checks -----------------------------------------------
 require_root
 require_cmds sfdisk losetup mkfs.vfat mkfs.ext4 bsdtar
 if command -v wget >/dev/null 2>&1; then DL=wget; \
 elif command -v curl >/dev/null 2>&1; then DL=curl; \
-else die "wget か curl が必要です"; fi
+else die "wget or curl is required"; fi
 
 mkdir -p "${OUT_DIR}" "${CACHE_DIR}" "${WORK_DIR}"
 
-# --- 1. ベース tarball の取得 ------------------------------------------
+# --- 1. Fetch base tarball ---------------------------------------------
 fetch_tarball() {
   if [[ -f "${TARBALL_PATH}" ]]; then
-    ok "tarball はキャッシュ済み: ${TARBALL_PATH}"
+    ok "tarball already cached: ${TARBALL_PATH}"
     return
   fi
-  log "ベース tarball を取得: ${TARBALL_URL}"
+  log "fetching base tarball: ${TARBALL_URL}"
   local tmp="${TARBALL_PATH}.part"
   if [[ "${DL}" == wget ]]; then
     wget -O "${tmp}" "${TARBALL_URL}"
@@ -63,28 +63,28 @@ fetch_tarball() {
   fi
   mv "${tmp}" "${TARBALL_PATH}"
 
-  # md5 があれば検証（取得できなければスキップ）
+  # Verify md5 if available (skip if it cannot be fetched).
   local md5url="${TARBALL_URL}.md5" md5file="${TARBALL_PATH}.md5"
   if { [[ "${DL}" == wget ]] && wget -qO "${md5file}" "${md5url}"; } ||
      { [[ "${DL}" == curl ]] && curl -fsL -o "${md5file}" "${md5url}"; }; then
-    log "md5 を検証中"
+    log "verifying md5"
     ( cd "${CACHE_DIR}" && md5sum -c "$(basename "${md5file}")" ) \
-      || die "md5 検証に失敗しました"
-    ok "md5 検証 OK"
+      || die "md5 verification failed"
+    ok "md5 verification OK"
   else
-    warn "md5 が取得できないため検証をスキップ"
+    warn "md5 unavailable; skipping verification"
   fi
 }
 
-# --- 2. イメージ作成とパーティション ----------------------------------
+# --- 2. Create image and partitions ------------------------------------
 LOOPDEV=""
 create_image() {
-  log "空イメージを作成: ${IMG_PATH} (${IMG_SIZE})"
+  log "creating empty image: ${IMG_PATH} (${IMG_SIZE})"
   rm -f "${IMG_PATH}"
   truncate -s "${IMG_SIZE}" "${IMG_PATH}"
 
-  log "パーティションテーブルを作成 (MBR: FAT32 boot + ext4 root)"
-  # p1: FAT32 (type c, bootable) / p2: Linux (type 83) 残り全部
+  log "creating partition table (MBR: FAT32 boot + ext4 root)"
+  # p1: FAT32 (type c, bootable) / p2: Linux (type 83), rest of the disk
   sfdisk "${IMG_PATH}" <<EOF
 label: dos
 unit: sectors
@@ -92,50 +92,50 @@ start=2048, size=${BOOT_SIZE}, type=c, bootable
 type=83
 EOF
 
-  log "loop デバイスに接続"
+  log "attaching loop device"
   LOOPDEV="$(losetup -f --show -P "${IMG_PATH}")"
   push_cleanup "losetup -d '${LOOPDEV}'"
   [[ -b "${LOOPDEV}p1" && -b "${LOOPDEV}p2" ]] \
-    || die "パーティションデバイスが見つかりません (${LOOPDEV}p1/p2)"
+    || die "partition devices not found (${LOOPDEV}p1/p2)"
 
-  log "ファイルシステムを作成 (BOOT=vfat, ROOT=ext4)"
+  log "creating filesystems (BOOT=vfat, ROOT=ext4)"
   mkfs.vfat -F 32 -n BOOT "${LOOPDEV}p1" >/dev/null
   mkfs.ext4 -q -L ROOT "${LOOPDEV}p2"
 }
 
-# --- 3. tarball 展開 ---------------------------------------------------
+# --- 3. Extract tarball ------------------------------------------------
 extract_rootfs() {
-  log "ファイルシステムをマウント"
+  log "mounting filesystems"
   mkdir -p "${ROOT_MNT}"
   mount "${LOOPDEV}p2" "${ROOT_MNT}"
   push_cleanup "umount -Rl '${ROOT_MNT}'"
   mkdir -p "${ROOT_MNT}/boot"
   mount "${LOOPDEV}p1" "${ROOT_MNT}/boot"
 
-  log "ベース rootfs を展開中（数分かかります）"
+  log "extracting base rootfs (this takes a few minutes)"
   bsdtar -xpf "${TARBALL_PATH}" -C "${ROOT_MNT}"
   sync
 }
 
-# --- 4. uConsole 設定の適用 -------------------------------------------
+# --- 4. Apply uConsole configuration -----------------------------------
 apply_config() {
-  log "uConsole 用ブート設定を適用"
+  log "applying uConsole boot configuration"
   install -m 0644 "${SCRIPT_DIR}/config/boot/config.txt"  "${ROOT_MNT}/boot/config.txt"
   install -m 0644 "${SCRIPT_DIR}/config/boot/cmdline.txt" "${ROOT_MNT}/boot/cmdline.txt"
 
-  # overlays/*.dtbo があればコピー
+  # Copy overlays/*.dtbo if present.
   shopt -s nullglob
   local dtbos=("${SCRIPT_DIR}"/config/overlays/*.dtbo)
   shopt -u nullglob
   if ((${#dtbos[@]})); then
-    log "追加 overlay を配置: ${#dtbos[@]} 件"
+    log "installing extra overlays: ${#dtbos[@]}"
     mkdir -p "${ROOT_MNT}/boot/overlays"
     install -m 0644 "${dtbos[@]}" "${ROOT_MNT}/boot/overlays/"
   fi
-  # kernel8-cm4.img / clockworkpi-uconsole-cm4 overlay / dtb / modules は
-  # install_kernel() が自前ビルド成果物 (kernel/out, kernel/modules) から配置する。
+  # kernel8-cm4.img / clockworkpi-uconsole-cm4 overlay / dtb / modules are
+  # placed by install_kernel() from our build artifacts (kernel/out, kernel/modules).
 
-  # /etc/fstab に boot を明示
+  # Declare boot explicitly in /etc/fstab.
   cat > "${ROOT_MNT}/etc/fstab" <<'EOF'
 # <file system> <dir>  <type>  <options>          <dump> <pass>
 /dev/mmcblk0p1  /boot  vfat    defaults           0      0
@@ -144,25 +144,26 @@ EOF
   echo "${UC_HOSTNAME}" > "${ROOT_MNT}/etc/hostname"
 }
 
-# --- 4.5 自前ビルドのカーネルを配置 -----------------------------------
-# scripts/build-kernel.sh が出力した kernel8.img / dtb / overlays / modules
-# を rootfs に直接展開する。config.txt は kernel=kernel8-cm4.img を参照。
+# --- 4.5 Install our self-built kernel ---------------------------------
+# Deploy the kernel8.img / dtb / overlays / modules produced by
+# scripts/build-kernel.sh directly into the rootfs. config.txt references
+# kernel=kernel8-cm4.img.
 install_kernel() {
   if [[ ! -f "${KERNEL_OUT}/kernel8.img" ]]; then
-    die "自前カーネルが未ビルドです。先に ./scripts/build-kernel.sh を実行してください（${KERNEL_OUT}/kernel8.img が必要）"
+    die "self-built kernel missing. Run ./scripts/build-kernel.sh first (${KERNEL_OUT}/kernel8.img required)"
   fi
   local kver; kver="$(cat "${KERNEL_OUT}/kver.txt" 2>/dev/null || true)"
-  [[ -n "${kver}" ]] || die "kver.txt が読めません（ビルドが不完全）"
-  log "自前カーネルを配置 (kver=${kver})"
+  [[ -n "${kver}" ]] || die "cannot read kver.txt (incomplete build)"
+  log "installing self-built kernel (kver=${kver})"
 
-  # カーネル本体（config.txt の kernel=kernel8-cm4.img に合わせる）
+  # Kernel image (matches kernel=kernel8-cm4.img in config.txt).
   install -m 0644 "${KERNEL_OUT}/kernel8.img" "${ROOT_MNT}/boot/kernel8-cm4.img"
 
   shopt -s nullglob
   # dtb
   local dtbs=("${KERNEL_OUT}"/*.dtb)
   ((${#dtbs[@]})) && install -m 0644 "${dtbs[@]}" "${ROOT_MNT}/boot/"
-  # overlays（clockworkpi-uconsole-cm4.dtbo を含む）
+  # overlays (includes clockworkpi-uconsole-cm4.dtbo)
   mkdir -p "${ROOT_MNT}/boot/overlays"
   local ovls=("${KERNEL_OUT}"/overlays/*.dtbo)
   ((${#ovls[@]})) && install -m 0644 "${ovls[@]}" "${ROOT_MNT}/boot/overlays/"
@@ -170,42 +171,43 @@ install_kernel() {
     && install -m 0644 "${KERNEL_OUT}/overlays/README" "${ROOT_MNT}/boot/overlays/"
   shopt -u nullglob
 
-  # modules（modules_install 済み。modules.dep 等の相対パスはそのまま有効）
+  # modules (already modules_install'd; relative paths in modules.dep stay valid)
   [[ -d "${KERNEL_MODULES}/lib/modules/${kver}" ]] \
-    || die "モジュールが見つかりません: ${KERNEL_MODULES}/lib/modules/${kver}"
+    || die "modules not found: ${KERNEL_MODULES}/lib/modules/${kver}"
   mkdir -p "${ROOT_MNT}/usr/lib/modules"
   cp -a "${KERNEL_MODULES}/lib/modules/${kver}" "${ROOT_MNT}/usr/lib/modules/"
 
-  ok "カーネル配置完了: /boot/kernel8-cm4.img + overlays + /usr/lib/modules/${kver}"
+  ok "kernel installed: /boot/kernel8-cm4.img + overlays + /usr/lib/modules/${kver}"
 }
 
-# --- 5. chroot カスタマイズ -------------------------------------------
+# --- 5. chroot customization -------------------------------------------
 customize_chroot() {
   if [[ -n "${SKIP_CHROOT}" ]]; then
-    warn "SKIP_CHROOT が設定されているため chroot カスタマイズを省略"
+    warn "SKIP_CHROOT is set; skipping chroot customization"
     return
   fi
   local qemu; qemu="$(command -v qemu-aarch64-static || true)"
   if [[ -z "${qemu}" ]]; then
-    warn "qemu-aarch64-static が無いため chroot カスタマイズを省略"
-    warn "初回起動後に scripts/customize.sh 相当を手動実行してください"
+    warn "qemu-aarch64-static not found; skipping chroot customization"
+    warn "run the equivalent of scripts/customize.sh manually after first boot"
     return
   fi
 
-  log "chroot でカスタマイズ (qemu-user-static)"
+  log "customizing in chroot (qemu-user-static)"
   install -Dm755 "${qemu}" "${ROOT_MNT}/usr/bin/$(basename "${qemu}")"
 
-  # 疑似ファイルシステムと DNS を用意
+  # Set up pseudo filesystems and DNS.
   mount -t proc  /proc            "${ROOT_MNT}/proc"
   mount --rbind  /sys             "${ROOT_MNT}/sys"
   mount --rbind  /dev             "${ROOT_MNT}/dev"
-  # 重要: rbind したマウントを private 化する。systemd 環境では / が rshared の
-  # ため、これを怠ると後始末の再帰 umount がホスト側に伝播し、ホストの
-  # /dev/pts (devpts) まで外れて sudo が "unable to allocate pty" で壊れる。
+  # IMPORTANT: make the rbind mounts private. On systemd hosts / is rshared,
+  # so without this the cleanup's recursive umount propagates to the host and
+  # unmounts the host's /dev/pts (devpts), breaking sudo with
+  # "unable to allocate pty".
   mount --make-rprivate "${ROOT_MNT}/sys"
   mount --make-rprivate "${ROOT_MNT}/dev"
-  # lazy(-l) を付ける: chroot 内で起動した gpg-agent 等が /dev/pts を掴んで
-  # busy になっても確実に外せるようにする。
+  # Use lazy (-l): even if a process started inside the chroot (e.g. gpg-agent)
+  # holds /dev/pts busy, this still detaches reliably.
   push_cleanup "umount -Rl '${ROOT_MNT}/proc' '${ROOT_MNT}/sys' '${ROOT_MNT}/dev' 2>/dev/null || true"
   cp --remove-destination /etc/resolv.conf "${ROOT_MNT}/etc/resolv.conf"
 
@@ -215,41 +217,42 @@ customize_chroot() {
       /bin/bash /root/customize.sh
   rm -f "${ROOT_MNT}/root/customize.sh"
 
-  # chroot 内で残った gpg-agent 等を停止しないと後続の umount が busy になる。
+  # Stop leftover processes (e.g. gpg-agent) or the following umount stays busy.
   chroot "${ROOT_MNT}" /usr/bin/gpgconf --kill all 2>/dev/null || true
   kill_chroot_procs
 }
 
-# ROOT_MNT 配下を root とするプロセスを終了させる（gpg-agent 等の掃除）。
+# Kill processes whose root is under ROOT_MNT (cleans up gpg-agent, etc.).
 kill_chroot_procs() {
   local p rootlink
   for p in /proc/[0-9]*; do
     rootlink="$(readlink "${p}/root" 2>/dev/null)" || continue
-    [[ "${rootlink}" == "${ROOT_MNT}" || "${rootlink}" == "${ROOT_MNT}/"* ]] \
-      && kill "${p##*/}" 2>/dev/null || true
+    if [[ "${rootlink}" == "${ROOT_MNT}" || "${rootlink}" == "${ROOT_MNT}/"* ]]; then
+      kill "${p##*/}" 2>/dev/null || true
+    fi
   done
 }
 
-# --- 5.5 ブート設定の再適用・検証 -------------------------------------
-# 自前カーネル方式では pacman の .install フックが無いため config.txt を
-# 壊す要因は無いが、chroot 後に念のため再適用して整合を保証する。
-# 自前カーネルは initramfs 不要（mmc/ext4 はビルトイン）。
+# --- 5.5 Re-apply and verify boot config -------------------------------
+# With the self-built-kernel approach there is no pacman .install hook to clobber
+# config.txt, but re-apply it after chroot to guarantee consistency.
+# No initramfs is needed (mmc/ext4 are built-in).
 reapply_boot_config() {
-  log "ブート設定を再適用・検証 (config.txt / cmdline.txt)"
+  log "re-applying and verifying boot config (config.txt / cmdline.txt)"
   install -m 0644 "${SCRIPT_DIR}/config/boot/config.txt"  "${ROOT_MNT}/boot/config.txt"
   install -m 0644 "${SCRIPT_DIR}/config/boot/cmdline.txt" "${ROOT_MNT}/boot/cmdline.txt"
 
   [[ -f "${ROOT_MNT}/boot/kernel8-cm4.img" ]] \
-    || warn "kernel8-cm4.img が /boot にありません（install_kernel が失敗した可能性）"
+    || warn "kernel8-cm4.img not in /boot (install_kernel may have failed)"
   [[ -f "${ROOT_MNT}/boot/overlays/clockworkpi-uconsole-cm4.dtbo" ]] \
-    || warn "clockworkpi-uconsole-cm4.dtbo が overlays にありません（新パネルが動かない可能性）"
+    || warn "clockworkpi-uconsole-cm4.dtbo not in overlays (new panel may not work)"
 }
 
-# --- 6. 仕上げ ---------------------------------------------------------
+# --- 6. Finalize -------------------------------------------------------
 finalize() {
   sync
-  ok "イメージ生成完了: ${IMG_PATH}"
-  log "SD カードへの書き込み例:"
+  ok "image build complete: ${IMG_PATH}"
+  log "example write to SD card:"
   printf '    sudo dd if=%s of=/dev/sdX bs=4M conv=fsync status=progress\n' "${IMG_PATH}"
 }
 
@@ -258,10 +261,11 @@ main() {
   create_image
   extract_rootfs
   apply_config
-  # 重要: 先に customize_chroot で linux-aarch64 を除去してから install_kernel。
-  # 逆順だと install_kernel が置いた /boot/bcm2711-rpi-cm4.dtb 等（linux-aarch64
-  # 所有パス）を pacman -Rdd linux-aarch64 が削除してしまい、DTB 欠落で起動不能に
-  # なる（overlays は非所有なので残り、dtb だけ消えるという症状になる）。
+  # IMPORTANT: run customize_chroot (which removes linux-aarch64) BEFORE
+  # install_kernel. In the reverse order, `pacman -Rdd linux-aarch64` would
+  # delete the /boot/bcm2711-rpi-cm4.dtb etc. that install_kernel placed (those
+  # paths are owned by linux-aarch64), leaving the device unbootable due to a
+  # missing DTB (overlays survive since they are unowned, so only the dtb goes).
   customize_chroot
   install_kernel
   reapply_boot_config

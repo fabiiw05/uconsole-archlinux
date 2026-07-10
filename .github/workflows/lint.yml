@@ -1,0 +1,21 @@
+name: lint
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: bash -n (syntax check)
+        run: bash -n build.sh scripts/*.sh lib/*.sh
+
+      # Pin the shellcheck version via the official image so CI matches the
+      # version used for local verification (avoids apt version drift).
+      - name: shellcheck
+        run: |
+          docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.11.0 \
+            build.sh scripts/*.sh lib/*.sh
