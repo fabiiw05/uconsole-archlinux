@@ -149,35 +149,11 @@ EOF
 # scripts/build-kernel.sh directly into the rootfs. config.txt references
 # kernel=kernel8-cm4.img.
 install_kernel() {
-  if [[ ! -f "${KERNEL_OUT}/kernel8.img" ]]; then
-    die "self-built kernel missing. Run ./scripts/build-kernel.sh first (${KERNEL_OUT}/kernel8.img required)"
-  fi
-  local kver; kver="$(cat "${KERNEL_OUT}/kver.txt" 2>/dev/null || true)"
-  [[ -n "${kver}" ]] || die "cannot read kver.txt (incomplete build)"
-  log "installing self-built kernel (kver=${kver})"
-
-  # Kernel image (matches kernel=kernel8-cm4.img in config.txt).
-  install -m 0644 "${KERNEL_OUT}/kernel8.img" "${ROOT_MNT}/boot/kernel8-cm4.img"
-
-  shopt -s nullglob
-  # dtb
-  local dtbs=("${KERNEL_OUT}"/*.dtb)
-  ((${#dtbs[@]})) && install -m 0644 "${dtbs[@]}" "${ROOT_MNT}/boot/"
-  # overlays (includes clockworkpi-uconsole-cm4.dtbo)
-  mkdir -p "${ROOT_MNT}/boot/overlays"
-  local ovls=("${KERNEL_OUT}"/overlays/*.dtbo)
-  ((${#ovls[@]})) && install -m 0644 "${ovls[@]}" "${ROOT_MNT}/boot/overlays/"
-  [[ -f "${KERNEL_OUT}/overlays/README" ]] \
-    && install -m 0644 "${KERNEL_OUT}/overlays/README" "${ROOT_MNT}/boot/overlays/"
-  shopt -u nullglob
-
-  # modules (already modules_install'd; relative paths in modules.dep stay valid)
-  [[ -d "${KERNEL_MODULES}/lib/modules/${kver}" ]] \
-    || die "modules not found: ${KERNEL_MODULES}/lib/modules/${kver}"
-  mkdir -p "${ROOT_MNT}/usr/lib/modules"
-  cp -a "${KERNEL_MODULES}/lib/modules/${kver}" "${ROOT_MNT}/usr/lib/modules/"
-
-  ok "kernel installed: /boot/kernel8-cm4.img + overlays + /usr/lib/modules/${kver}"
+  [[ -f "${KERNEL_OUT}/kernel8.img" ]] \
+    || die "self-built kernel missing. Run ./scripts/build-kernel.sh first (${KERNEL_OUT}/kernel8.img required)"
+  # Shared with scripts/update.sh via lib/common.sh so the on-image and
+  # on-device install paths cannot drift.
+  install_kernel_artifacts "${KERNEL_OUT}" "${KERNEL_MODULES}" "${ROOT_MNT}"
 }
 
 # --- 5. chroot customization -------------------------------------------

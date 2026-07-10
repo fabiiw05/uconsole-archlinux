@@ -83,6 +83,29 @@ sudo dd if=out/uconsole-archlinux-*.img of=/dev/sdX bs=4M conv=fsync status=prog
 sudo IMG_SIZE=8G UC_HOSTNAME=myuconsole ./build.sh
 ```
 
+## 稼働中デバイスの更新
+
+新しいカーネルを取り込むのに**焼き直しは不要**です。ベースの Arch Linux ARM は
+`sudo pacman -Syu`（ローリング）で自動更新され、自前ビルドの**カーネル + ブート設定**は
+GitHub Releases 経由で別途配布し、その場で入れ替えます:
+
+```sh
+# uConsole 本体で実行
+sudo ./scripts/update.sh            # 最新リリースのカーネルを導入
+sudo ./scripts/update.sh --force    # 同一版でも強制的に再適用
+sudo reboot                         # 再起動で反映
+```
+
+`update.sh` はリリース tarball を取得し、現在の
+`/boot/kernel8-cm4.img`（＋ `config.txt` / `cmdline.txt`）を `*.bak` に退避してから、
+新しいカーネル / modules / DTB / overlays とブート設定を配置し、版を
+`/boot/uconsole-kernel.release` に記録します（既に最新なら再実行しても何もしません）。
+導入されるのは**公開済み・実機検証済みのリリースのみ**で、ブランチ HEAD を直接引くことは
+ありません。新カーネルで起動しない場合は、FAT32 ブートパーティションをマウントできる別の
+マシンから `kernel8-cm4.img.bak` を書き戻してください。
+
+> メンテナは `scripts/package-kernel.sh` でリリースを作成します（[MAINTAINING.ja.md](MAINTAINING.ja.md) 参照）。
+
 ## 構成
 
 ```
@@ -96,6 +119,8 @@ scripts/
   build-kernel.sh       ak-rex/ClockworkPi-linux (rpi-6.12.y) をクロスビルド
   customize.sh          chroot 内で実行されるカスタマイズ（ロケール・NM 等）
   collect-logs.sh       起動後の SD からブートログを回収するデバッグ補助
+  package-kernel.sh     カーネル成果物をリリース tarball に梱包
+  update.sh             実機用カーネル/ブート更新（焼き直し不要）
 cache/                  ダウンロードした tarball（.gitignore）
 kernel/                 カーネルビルド成果物 out/ modules/（.gitignore）
 ```
