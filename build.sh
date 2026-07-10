@@ -227,8 +227,9 @@ kill_chroot_procs() {
   local p rootlink
   for p in /proc/[0-9]*; do
     rootlink="$(readlink "${p}/root" 2>/dev/null)" || continue
-    [[ "${rootlink}" == "${ROOT_MNT}" || "${rootlink}" == "${ROOT_MNT}/"* ]] \
-      && kill "${p##*/}" 2>/dev/null || true
+    if [[ "${rootlink}" == "${ROOT_MNT}" || "${rootlink}" == "${ROOT_MNT}/"* ]]; then
+      kill "${p##*/}" 2>/dev/null || true
+    fi
   done
 }
 
