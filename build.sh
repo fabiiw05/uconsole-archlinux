@@ -199,6 +199,11 @@ customize_chroot() {
   mount -t proc  /proc            "${ROOT_MNT}/proc"
   mount --rbind  /sys             "${ROOT_MNT}/sys"
   mount --rbind  /dev             "${ROOT_MNT}/dev"
+  # 重要: rbind したマウントを private 化する。systemd 環境では / が rshared の
+  # ため、これを怠ると後始末の再帰 umount がホスト側に伝播し、ホストの
+  # /dev/pts (devpts) まで外れて sudo が "unable to allocate pty" で壊れる。
+  mount --make-rprivate "${ROOT_MNT}/sys"
+  mount --make-rprivate "${ROOT_MNT}/dev"
   # lazy(-l) を付ける: chroot 内で起動した gpg-agent 等が /dev/pts を掴んで
   # busy になっても確実に外せるようにする。
   push_cleanup "umount -Rl '${ROOT_MNT}/proc' '${ROOT_MNT}/sys' '${ROOT_MNT}/dev' 2>/dev/null || true"
