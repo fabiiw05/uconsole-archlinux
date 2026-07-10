@@ -63,6 +63,11 @@ another drive**):
 sudo dd if=out/uconsole-archlinux-*.img of=/dev/sdX bs=4M conv=fsync status=progress
 ```
 
+The image is a fixed `IMG_SIZE` (6G by default), but you do **not** need to
+manually grow it: on the **first boot** the root partition and its filesystem
+are automatically expanded to fill the whole SD card (a one-shot systemd
+service that disables itself afterwards).
+
 ### Main settings (overridable via environment variables)
 
 | Variable      | Default                             | Description                     |

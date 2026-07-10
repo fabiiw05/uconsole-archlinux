@@ -65,6 +65,69 @@ fi
 echo "==> [chroot] enabling persistent journald"
 mkdir -p /var/log/journal
 
+# --- First-boot root filesystem expansion ----------------------------
+# The image is built at a fixed IMG_SIZE (e.g. 6G), so a freshly flashed SD
+# card only exposes that much space regardless of its real capacity. Grow the
+# root partition + ext4 to fill the whole card on the first boot, then disable
+# the service (a stamp file guards it so it only runs once).
+#
+# Uses only tools already present in the ALARM base (sfdisk from util-linux,
+# resize2fs from e2fsprogs) so it needs no extra packages and works offline.
+echo "==> [chroot] installing first-boot root-fs expansion service"
+cat > /usr/local/sbin/uconsole-resize-rootfs <<'RESIZE'
+#!/usr/bin/env bash
+# Grow the root partition and its filesystem to fill the storage device.
+set -uo pipefail
+
+ROOT_SRC="$(findmnt -no SOURCE /)"   # e.g. /dev/mmcblk0p2 or /dev/sda2
+case "${ROOT_SRC}" in
+  /dev/*[0-9]p[0-9]*)  # mmcblk0p2, nvme0n1p2 -> disk keeps its trailing digit
+    DISK="${ROOT_SRC%p[0-9]*}"
+    PART="${ROOT_SRC##*p}" ;;
+  /dev/*[0-9])         # sda2 -> sda, 2
+    PART="${ROOT_SRC##*[!0-9]}"
+    DISK="${ROOT_SRC%"${PART}"}" ;;
+  *)
+    echo "uconsole-resize-rootfs: cannot parse root device '${ROOT_SRC}'" >&2
+    exit 1 ;;
+esac
+
+echo "uconsole-resize-rootfs: growing ${DISK} partition ${PART}"
+# ',+' = keep the start, extend the size to the end of the device.
+echo ',+' | sfdisk -N "${PART}" --no-reread --force "${DISK}" || true
+partx -u "${DISK}" 2>/dev/null || partprobe "${DISK}" 2>/dev/null || true
+
+# Online-resize the mounted ext4 root. resize2fs is idempotent, so this is a
+# no-op if the filesystem already fills the partition.
+resize2fs "${ROOT_SRC}"
+RESIZE
+chmod 0755 /usr/local/sbin/uconsole-resize-rootfs
+
+cat > /etc/systemd/system/uconsole-resize-rootfs.service <<'UNIT'
+[Unit]
+Description=Expand root filesystem to fill the storage on first boot
+ConditionPathExists=/var/lib/uconsole-resize-rootfs.stamp
+After=systemd-remount-fs.service
+Before=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/uconsole-resize-rootfs
+# Only removed when ExecStart succeeded; a failure keeps the stamp so it
+# retries on the next boot.
+ExecStartPost=/usr/bin/rm -f /var/lib/uconsole-resize-rootfs.stamp
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+# The stamp both arms the service (ConditionPathExists) and, once removed on
+# success, prevents it from ever running again.
+mkdir -p /var/lib
+: > /var/lib/uconsole-resize-rootfs.stamp
+systemctl enable uconsole-resize-rootfs.service || true
+
 echo "==> [chroot] timezone: ${TIMEZONE}"
 ln -sf "/usr/share/zoneinfo/${TIMEZONE}" /etc/localtime
 

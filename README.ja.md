@@ -61,6 +61,11 @@ SD カードへの書き込み（デバイス名は要確認、**間違えると
 sudo dd if=out/uconsole-archlinux-*.img of=/dev/sdX bs=4M conv=fsync status=progress
 ```
 
+イメージは固定サイズ（`IMG_SIZE`、既定 6G）ですが、手動で拡張する必要は
+**ありません**。**初回起動時**にルートパーティションとファイルシステムが
+SD カード全体まで自動拡張されます（一度だけ動いて自身を無効化する
+systemd oneshot サービス）。
+
 ### 主な設定（環境変数で上書き可能）
 
 | 変数           | 既定値                              | 説明                          |

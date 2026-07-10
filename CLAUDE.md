@@ -55,4 +55,6 @@ Understand these before editing the pipeline — they are landmines that caused 
 
 - **qemu chroot quirk:** `customize.sh` runs under `qemu-aarch64-static` and uses `pacman --disable-sandbox` because Landlock is unsupported under qemu emulation.
 
+- **The image is a fixed `IMG_SIZE` (default 6G); the SD card is filled on first boot, not at build time.** `customize.sh` installs a self-disabling systemd oneshot (`uconsole-resize-rootfs.service` + `/usr/local/sbin/uconsole-resize-rootfs`) that grows the root partition (`sfdisk -N`) and ext4 (`resize2fs`, online) to the whole device, guarded/armed by `/var/lib/uconsole-resize-rootfs.stamp` (removed only on success, so a failure retries next boot). It uses **only** util-linux + e2fsprogs (already in the ALARM base) so it runs offline with no extra package. Don't assume `df` on a fresh flash reflects the card size until after the first boot.
+
 - **Collected logs can be misleading:** the ALARM base tarball ships a baked-in journal from *its* build host. So an "empty / no new boot" result from `collect-logs.sh` means the flashed device never reached userspace — not that logging is broken. journald persistence (`/var/log/journal`) is enabled in `customize.sh`.
