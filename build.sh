@@ -258,8 +258,12 @@ main() {
   create_image
   extract_rootfs
   apply_config
-  install_kernel
+  # 重要: 先に customize_chroot で linux-aarch64 を除去してから install_kernel。
+  # 逆順だと install_kernel が置いた /boot/bcm2711-rpi-cm4.dtb 等（linux-aarch64
+  # 所有パス）を pacman -Rdd linux-aarch64 が削除してしまい、DTB 欠落で起動不能に
+  # なる（overlays は非所有なので残り、dtb だけ消えるという症状になる）。
   customize_chroot
+  install_kernel
   reapply_boot_config
   finalize
 }
