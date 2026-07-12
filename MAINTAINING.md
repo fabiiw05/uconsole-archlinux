@@ -150,6 +150,51 @@ Watch the front-page announcements and forum on
 [archlinuxarm.org](https://archlinuxarm.org/), and
 [archlinuxarm/PKGBUILDs](https://github.com/archlinuxarm/PKGBUILDs) on GitHub.
 
+### Time sync (systemd-timesyncd) vs. networkd / NetworkManager conflict
+
+**Symptom**: on the device `timedatectl` stays at `System clock synchronized: no`
+and the clock is badly off. `systemd-timesyncd` is `active`, yet
+`timedatectl show-timesync` shows `PacketCount=0` and an empty `ServerName` —
+it **never sends a single NTP packet** (even though `ping` and a manual UDP 123
+query succeed).
+
+**Root cause (two layers)**:
+
+1. **The uConsole has no battery-backed RTC** (`timedatectl` reports
+   `RTC time: n/a`), so the clock drifts on every boot and network sync is
+   effectively mandatory.
+2. The base Arch Linux ARM (rpi) tarball ships with **`systemd-networkd`
+   enabled**, while `scripts/customize.sh` additionally enables
+   **NetworkManager** (around L148), so **both run at once**. The real link
+   (`wlan0`) is managed by NetworkManager, but networkd claims the unplugged
+   wired `end0`, stays stuck `configuring`, and writes
+   `ONLINE_STATE=offline` into `/run/systemd/netif/state`.
+   `systemd-timesyncd` reads that networkd-provided online state, concludes it
+   is offline, and **never starts syncing**.
+
+**Permanent fix (on device)**:
+
+```sh
+# NetworkManager is our chosen manager, so disable networkd to remove the conflict
+sudo systemctl disable --now systemd-networkd.socket systemd-networkd \
+  systemd-networkd-wait-online
+sudo systemctl mask systemd-networkd
+sudo rm -rf /run/systemd/netif        # drop the stale offline state
+# Pin Japanese NTP servers (optional but reliable)
+sudo install -Dm644 /dev/stdin /etc/systemd/timesyncd.conf.d/10-japan.conf <<'CONF'
+[Time]
+NTP=ntp.nict.jp 0.jp.pool.ntp.org 1.jp.pool.ntp.org
+FallbackNTP=0.arch.pool.ntp.org 1.arch.pool.ntp.org 2.arch.pool.ntp.org 3.arch.pool.ntp.org
+CONF
+sudo systemctl restart systemd-timesyncd
+timedatectl timesync-status   # ServerName=ntp.nict.jp / synced == OK
+```
+
+**TODO (fix in the image)**: in `scripts/customize.sh`, next to the
+NetworkManager enablement, also run `systemctl disable systemd-networkd
+systemd-networkd.socket systemd-networkd-wait-online` and drop the
+`timesyncd.conf.d` file above, so future images avoid this out of the box.
+
 ## Future directions
 
 - **Package the kernel as a PKGBUILD** instead of file-injection. Under pacman
