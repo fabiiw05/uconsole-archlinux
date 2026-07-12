@@ -143,6 +143,48 @@ Landlock is not supported by the kernel!` で停止する。自前カーネル
 [archlinuxarm.org](https://archlinuxarm.org/) のフロントページ告知・forum、GitHub の
 [archlinuxarm/PKGBUILDs](https://github.com/archlinuxarm/PKGBUILDs) を監視。
 
+### 時刻同期 (systemd-timesyncd) と networkd / NetworkManager の競合
+
+**症状**: 実機で `timedatectl` が `System clock synchronized: no` のまま、時刻が
+大きくずれる。`systemd-timesyncd` は `active` なのに `timedatectl show-timesync` の
+`PacketCount=0` / `ServerName` 空で、**NTP パケットを 1 つも送っていない**
+（`ping` や手動の UDP 123 クエリは通るのに、である）。
+
+**原因（2 段構え）**:
+
+1. **uConsole にはバッテリバックアップ RTC が無い**（`timedatectl` で `RTC time: n/a`）。
+   起動ごとに時刻がずれるため、ネットワーク同期が事実上必須。
+2. ベースの Arch Linux ARM (rpi) tarball は **`systemd-networkd` が有効**な状態で
+   焼かれている。一方 `scripts/customize.sh` は **NetworkManager を追加で有効化**する
+   （L148 付近）。結果 **両者が二重起動**する。実接続 (`wlan0`) は NetworkManager
+   管理だが、networkd は未接続の有線 (`end0`) を掴んで `configuring` のまま留まり、
+   `/run/systemd/netif/state` に `ONLINE_STATE=offline` を書き込む。
+   `systemd-timesyncd` はこの networkd 由来の online 状態を見て「オフライン」と判断し、
+   **同期を開始しない**。
+
+**恒久対処（実機）**:
+
+```sh
+# NetworkManager を採用しているので networkd 系は無効化して競合を解消
+sudo systemctl disable --now systemd-networkd.socket systemd-networkd \
+  systemd-networkd-wait-online
+sudo systemctl mask systemd-networkd
+sudo rm -rf /run/systemd/netif        # stale な offline 状態を除去
+# 日本の NTP サーバを明示（任意だが確実）
+sudo install -Dm644 /dev/stdin /etc/systemd/timesyncd.conf.d/10-japan.conf <<'CONF'
+[Time]
+NTP=ntp.nict.jp 0.jp.pool.ntp.org 1.jp.pool.ntp.org
+FallbackNTP=0.arch.pool.ntp.org 1.arch.pool.ntp.org 2.arch.pool.ntp.org 3.arch.pool.ntp.org
+CONF
+sudo systemctl restart systemd-timesyncd
+timedatectl timesync-status   # ServerName=ntp.nict.jp / synced になれば OK
+```
+
+**TODO（イメージ側で根治）**: `scripts/customize.sh` の NetworkManager 有効化と
+同じ箇所で `systemctl disable systemd-networkd systemd-networkd.socket
+systemd-networkd-wait-online` を実行し、上記 `timesyncd.conf.d` を配置しておけば、
+以降のイメージはこの問題を最初から回避できる。
+
 ## 今後の方向性
 
 - **カーネルの PKGBUILD 化**（ファイル注入をやめる）。pacman 管理下に入れば、
