@@ -128,11 +128,18 @@ on-device で `pacman -Syu` しても通常は復活しません。念のため 
 任意の HackerGadgets AIO ボード（`AIO_BOARD=v1|v2`、README 参照）は**ビルド時**の
 オプトインです。`build.sh` がボードのオーバーレイを `/boot/config.txt` に追記し
 （`apply_aio_config`）、`build-kernel.sh` が `rtc-pcf85063`/`spidev` モジュールを
-常時有効化します。リリース tarball は AIO *無し*で作成するため、tarball から
-`config.txt` を再配置する `scripts/update.sh` は、カーネル更新時に**追記した AIO 行を
-上書き**します。旧ファイルは `config.txt.bak` に退避されるので、AIO ユーザは更新後に
-自分のブロックを再追記（または焼き直し）してください。ボード非搭載の実機で GPIO
+常時有効化し、`customize.sh`（v2）が GPIO 電源保持サービス `uconsole-aio-gpio.service`
+と DVB ブラックリストを導入します。リリース tarball は AIO *無し*で作成するため、
+tarball から `config.txt` を再配置する `scripts/update.sh` は、カーネル更新時に**追記した
+AIO オーバーレイ行を上書き**します（RTC/SPI オーバーレイが失われるので再追記が必要。
+旧ファイルは `config.txt.bak` に退避）。GPIO サービスと modprobe ブラックリストは
+`/boot` ではなく `/etc` 配下なので更新後も**残ります**。ボード非搭載の実機で GPIO
 ラインを有効化しないよう、AIO は意図的に公開リリースへ含めません。
+
+> ⚠️ **v2 の GPIO 電源保持は config.txt の `gpio=` ではなく userspace サービス**です。
+> firmware の `gpio=` はカーネルの GPIO サブシステム初期化時に解除され、起動 ~8 秒後に
+> ライン（特に RTL-SDR）がオフになります。`uconsole-aio-gpio.service` が `gpioset`
+> (libgpiod v2) で BCM 7/16/23/27 を再アサート・保持します。実機で判明した挙動です。
 
 ### pacman サンドボックス / Landlock
 

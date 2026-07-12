@@ -134,12 +134,18 @@ AIO_BOARD=v2 sudo ./build.sh   # AIO V2（GPIO 制御のラインを起動時に
   ボードが存在するときのみロードされます）。
 - libusb ベースの SDR ツールがドングルを掴めるよう、RTL2832 系 DVB ドライバを
   `/etc/modprobe.d` でブラックリスト化。
+- **`v2` のみ:** `libgpiod` と、起動後にイネーブル GPIO を再アサートして**保持**する
+  `uconsole-aio-gpio.service`。firmware の `gpio=…=op,dh` だけでは**不十分**で、
+  カーネルの GPIO サブシステム初期化時に解除され、起動 ~8 秒後にラインがオフになります
+  （実機で確認: RTL-SDR が列挙後に USB 切断）。このサービス（`gpioset` が BCM 7/16/23/27
+  を保持）が電源ONを維持します。
 
 RTC はそのまま動作します（カーネルがオーバーレイから `/dev/rtc0` を登録し、
 systemd が起動時に読み込みます）。**ユーザ空間の SDR/LoRa アプリは焼き込みません** —
-ベンダの `apt`/`.deb` パッケージは Arch には存在しないためです。AUR 等から各自で
-導入してください（`rtl-sdr`, `sdrpp-git`, `meshtasticd`）。Meshtastic の LoRa
-`config.yaml` は `spidev1.0` を使います。
+ベンダの `apt`/`.deb` パッケージは Arch には存在しないためです。公式リポジトリ / AUR から
+各自で導入してください: **`rtl-sdr`**（RTL-SDR に必須。SDR++ の `rtl_sdr_source` プラグインが
+dlopen する `librtlsdr` と、`rtl_test`・udev の `uaccess` ルールを提供）, `sdrpp-git`,
+`meshtasticd`。Meshtastic の LoRa `config.yaml` は `spidev1.0` を使います。
 
 > [!NOTE]
 > V2 の GPIO ピン番号や RTC の I²C アドレスはベンダガイド準拠です。お手元の

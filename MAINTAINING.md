@@ -134,13 +134,22 @@ Key properties:
 
 The optional HackerGadgets AIO board (`AIO_BOARD=v1|v2`, see the README) is a
 **build-time** opt-in: `build.sh` appends the board's overlays to
-`/boot/config.txt` (`apply_aio_config`), and `build-kernel.sh` enables the
-`rtc-pcf85063`/`spidev` modules unconditionally. Release tarballs are cut
-*without* AIO, so `scripts/update.sh` — which reinstalls `config.txt` from the
-tarball — **overwrites the appended AIO lines** on a kernel update. The old file
-is saved to `config.txt.bak`, so AIO users should re-append their block (or
-re-flash) afterward. We deliberately keep AIO out of public releases to avoid
-enabling GPIO rails on devices without the board.
+`/boot/config.txt` (`apply_aio_config`), `build-kernel.sh` enables the
+`rtc-pcf85063`/`spidev` modules unconditionally, and `customize.sh` (v2) installs
+the `uconsole-aio-gpio.service` GPIO power-hold + the DVB blacklist. Release
+tarballs are cut *without* AIO, so `scripts/update.sh` — which reinstalls
+`config.txt` from the tarball — **overwrites the appended AIO overlay lines** on a
+kernel update (RTC/SPI overlays are lost until re-added; the old file is saved to
+`config.txt.bak`). The GPIO service and modprobe blacklist live under `/etc`
+(not `/boot`), so they **survive** updates. AIO users should re-append their
+config.txt block (or re-flash) after a kernel update. We deliberately keep AIO out
+of public releases to avoid enabling GPIO rails on devices without the board.
+
+> ⚠️ The **v2 GPIO power-hold is a userspace service, not the config.txt
+> `gpio=` directive** — the firmware directive is released when the kernel GPIO
+> subsystem initialises, so the rails (notably the RTL-SDR) power off ~8 s into
+> boot. `uconsole-aio-gpio.service` re-asserts and holds BCM 7/16/23/27 via
+> `gpioset` (libgpiod v2). This was found on real hardware.
 
 ### pacman sandbox / Landlock
 

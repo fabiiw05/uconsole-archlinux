@@ -137,12 +137,19 @@ What the flag bakes in (**hardware enablement only**):
   `build-kernel.sh`; they only load when the board is present).
 - an `/etc/modprobe.d` blacklist of the RTL2832 DVB TV drivers so libusb SDR
   tools can claim the dongle.
+- **`v2` only:** `libgpiod` + a `uconsole-aio-gpio.service` that re-asserts and
+  **holds** the enable GPIOs high after boot. The firmware `gpio=…=op,dh` alone is
+  *not* enough — it is released when the kernel GPIO subsystem initialises, so the
+  rails power off ~8 s in (observed on hardware: the RTL-SDR enumerates then
+  USB-disconnects). The service (`gpioset` holding BCM 7/16/23/27) keeps them on.
 
 The RTC works out of the box (the kernel binds `/dev/rtc0` from the overlay and
 systemd reads it at boot). The **userspace SDR/LoRa apps are not baked in** — the
 vendor's `apt`/`.deb` packages don't exist on Arch. Install them yourself, e.g.
-from the AUR (`rtl-sdr`, `sdrpp-git`, `meshtasticd`); Meshtastic's LoRa
-`config.yaml` uses `spidev1.0`.
+from the official repo / AUR: **`rtl-sdr`** (required for the RTL-SDR — provides
+`librtlsdr` that SDR++'s `rtl_sdr_source` plugin dlopens, plus `rtl_test` and the
+udev `uaccess` rule), `sdrpp-git`, `meshtasticd`. Meshtastic's LoRa `config.yaml`
+uses `spidev1.0`.
 
 > [!NOTE]
 > The exact V2 GPIO pin numbers and RTC I²C address follow the vendor guide and
