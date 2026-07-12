@@ -261,7 +261,9 @@ AIO
   if [[ "${AIO_BOARD}" == v2 ]]; then
     cat >> "${ROOT_MNT}/boot/config.txt" <<'AIOV2'
 # V2 only: GPS/LoRa/SDR/internal-USB are powered off by default and gated behind
-# GPIO enable pins. Drive them high at firmware level (op = output, dh = high).
+# GPIO enable pins. This drives them high early (op = output, dh = high), but the
+# firmware setting is released once the kernel GPIO subsystem comes up, so the
+# persistent hold is done by uconsole-aio-gpio.service (installed in customize.sh).
 gpio=7,16,23,27=op,dh
 AIOV2
   fi

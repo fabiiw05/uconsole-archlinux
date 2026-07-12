@@ -171,4 +171,38 @@ blacklist rtl2830
 BLACKLIST
 fi
 
+# V2: the GPS/LoRa/SDR/internal-USB rails are gated behind GPIO enable pins. The
+# firmware `gpio=...=op,dh` in config.txt drives them high at boot, but that is
+# RELEASED once the kernel GPIO subsystem comes up (~8s in), so the rails power
+# off again (verified on hardware: the RTL-SDR enumerates then USB-disconnects).
+# Re-assert and HOLD them from userspace with gpioset (libgpiod v2 keeps the
+# lines while the process runs). BCM: SDR=7, LoRa=16, USB=23, GPS=27 (gpiochip0).
+if [[ "${AIO_BOARD}" == v2 ]]; then
+  echo "==> [chroot] AIO v2: installing GPIO power-hold service (libgpiod)"
+  ${PAC} -Sy --noconfirm --needed libgpiod || echo "!! libgpiod install failed (continuing)"
+  cat > /etc/systemd/system/uconsole-aio-gpio.service <<'UNIT'
+[Unit]
+Description=Hold HackerGadgets AIO V2 enable GPIOs high (GPS/LoRa/SDR/internal-USB)
+Documentation=https://hackergadgets.com/pages/hackergadgets-uconsole-rtl-sdr-lora-gps-rtc-usb-hub-all-in-one-extension-board-setup-guide
+# The firmware config.txt "gpio=...=op,dh" directive is released once the kernel
+# GPIO subsystem comes up, so the V2 rails power off (~8s after boot). Re-assert
+# and hold them from userspace. BCM: SDR=7, LoRa=16, USB=23, GPS=27 on gpiochip0.
+DefaultDependencies=no
+After=sysinit.target
+Before=basic.target
+
+[Service]
+Type=simple
+# gpioset (libgpiod v2) holds the requested line values until the process exits,
+# so keep it in the foreground and let systemd restart it if it ever dies.
+ExecStart=/usr/bin/gpioset -C uconsole-aio -c gpiochip0 7=1 16=1 23=1 27=1
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  systemctl enable uconsole-aio-gpio.service || true
+fi
+
 echo "==> [chroot] customization complete"
