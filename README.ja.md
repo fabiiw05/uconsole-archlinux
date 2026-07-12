@@ -120,6 +120,13 @@ sudo reboot                         # 再起動で反映
 ユーザーランドは入れていません**。そのため焼いた直後は無音です（ALSA の PWM
 デバイスは存在するが、ミキサーが無く出力がミュート/音量0のまま）。
 
+> [!NOTE]
+> uConsole の内蔵**スピーカーアンプ**は enable GPIO（BCM11）で有効化されます。
+> `customize.sh` が `uconsole-speaker-amp.service` を入れ、起動時に `gpioset` で
+> BCM11 を high 保持します（firmware の `gpio=11=op,dh` だけではカーネルの GPIO
+> サブシステム起動時に解放されて効かないため）。これが無いと、ヘッドフォンは鳴る
+> のに内蔵スピーカーだけ無音になります。既定で有効なので操作は不要です。
+
 **CLI だけ（最小、`alsa-utils`）:**
 
 ```sh

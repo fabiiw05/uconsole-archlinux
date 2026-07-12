@@ -124,6 +124,14 @@ onboard amplifier → speaker), but to keep the base minimal it ships **no audio
 userspace**. So a fresh flash is silent: the ALSA PWM device exists, but there is
 no mixer, so its output stays muted / at zero volume.
 
+> [!NOTE]
+> The uConsole's internal **speaker amplifier** is gated by an enable GPIO
+> (BCM11). `customize.sh` installs a `uconsole-speaker-amp.service` that holds
+> BCM11 high at boot (via `gpioset`), because the firmware `gpio=11=op,dh` alone
+> is released once the kernel GPIO subsystem comes up. Without it, headphones
+> would work but the built-in speaker would stay silent. Nothing to do — it is
+> enabled out of the box.
+
 **CLI only (minimal, `alsa-utils`):**
 
 ```sh

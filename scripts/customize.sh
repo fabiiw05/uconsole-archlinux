@@ -156,6 +156,40 @@ else
   echo "!! package install failed (continuing)"
 fi
 
+# --- Internal speaker amplifier enable -------------------------------
+# The uConsole's onboard speaker amplifier is gated by an enable GPIO
+# (BCM11 / gpiochip0 line 11). Headphones bypass the amp, so without this the
+# 3.5mm jack works but the built-in speaker stays SILENT. The firmware
+# `gpio=11=op,dh` in config.txt is NOT enough: like the AIO rails, it is
+# released once the kernel GPIO subsystem initialises. Hold BCM11 high from
+# userspace with gpioset (libgpiod v2 keeps the line while the process runs).
+# This only enables the hardware path; the audio userspace (alsa-utils /
+# PipeWire) is still up to the user -- see README "Audio".
+echo "==> [chroot] installing speaker-amp GPIO-enable service (libgpiod)"
+${PAC} -Sy --noconfirm --needed libgpiod || echo "!! libgpiod install failed (continuing)"
+cat > /etc/systemd/system/uconsole-speaker-amp.service <<'UNIT'
+[Unit]
+Description=Enable the uConsole internal speaker amplifier (hold BCM11 high)
+# Headphones bypass the amp; without this the built-in speaker is silent. The
+# firmware config.txt "gpio=11=op,dh" is released when the kernel GPIO subsystem
+# comes up, so hold BCM11 (gpiochip0 line 11) high from userspace instead.
+DefaultDependencies=no
+After=sysinit.target
+Before=basic.target
+
+[Service]
+Type=simple
+# gpioset (libgpiod v2) holds the requested line value until the process exits,
+# so keep it in the foreground and let systemd restart it if it ever dies.
+ExecStart=/usr/bin/gpioset -C uconsole-speaker-amp -c gpiochip0 11=1
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl enable uconsole-speaker-amp.service || true
+
 # --- Optional AIO extension board ------------------------------------
 # When enabled, keep the kernel's DVB TV drivers off the RTL-SDR dongle so
 # libusb userspace tools (rtl_test, SDR++, etc.) can claim it. The RTC, SPI and
