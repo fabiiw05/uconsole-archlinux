@@ -116,6 +116,41 @@ machine that can mount the FAT32 boot partition.
 > Maintainers cut a release with `scripts/package-kernel.sh` — see
 > [MAINTAINING.md](MAINTAINING.md).
 
+## Audio (optional)
+
+The image enables the **hardware audio path** in `config/boot/config.txt`
+(`dtparam=audio=on` + `dtoverlay=audremap,pins_12_13` — PWM audio on GPIO12/13 →
+onboard amplifier → speaker), but to keep the base minimal it ships **no audio
+userspace**. So a fresh flash is silent: the ALSA PWM device exists, but there is
+no mixer, so its output stays muted / at zero volume.
+
+**CLI only (minimal, `alsa-utils`):**
+
+```sh
+sudo pacman -S alsa-utils
+alsamixer                 # press M to unmute, ↑ to raise volume, Esc (control is 'PCM'/'Headphone')
+speaker-test -c1 -twav    # test the speaker
+sudo alsactl store        # persist across reboots (alsa-restore.service restores it)
+```
+
+Non-interactively: `amixer sset PCM unmute 100%` (confirm the control name with
+`amixer scontrols`).
+
+**Desktop use (PipeWire)** — for a compositor / browser / multiple apps:
+
+```sh
+sudo pacman -S alsa-utils pipewire pipewire-alsa pipewire-pulse wireplumber
+alsamixer                 # unmute the hardware mixer FIRST (PipeWire sits on top of ALSA)
+sudo alsactl store
+systemctl --user enable --now pipewire pipewire-pulse wireplumber
+wpctl status              # verify the graph / default sink
+```
+
+> [!NOTE]
+> The hardware mixer must be unmuted (via `alsamixer`) even when using PipeWire —
+> PipeWire runs on top of ALSA, so a muted PWM control silences everything. PWM
+> audio is inherently noisy / low-fidelity (a uConsole trait).
+
 ## AIO extension board (optional)
 
 The [HackerGadgets uConsole AIO V1/V2](https://hackergadgets.com/pages/hackergadgets-uconsole-rtl-sdr-lora-gps-rtc-usb-hub-all-in-one-extension-board-setup-guide)

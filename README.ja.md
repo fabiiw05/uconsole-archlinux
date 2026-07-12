@@ -112,6 +112,40 @@ sudo reboot                         # 再起動で反映
 
 > メンテナは `scripts/package-kernel.sh` でリリースを作成します（[MAINTAINING.ja.md](MAINTAINING.ja.md) 参照）。
 
+## オーディオ（任意）
+
+イメージは `config/boot/config.txt` で**ハードウェアの音声経路**を有効化済みです
+（`dtparam=audio=on` + `dtoverlay=audremap,pins_12_13` — PWM 音声を GPIO12/13 →
+オンボードアンプ → スピーカーへ）。ただしベースを最小に保つため、**オーディオの
+ユーザーランドは入れていません**。そのため焼いた直後は無音です（ALSA の PWM
+デバイスは存在するが、ミキサーが無く出力がミュート/音量0のまま）。
+
+**CLI だけ（最小、`alsa-utils`）:**
+
+```sh
+sudo pacman -S alsa-utils
+alsamixer                 # M でミュート解除・↑で音量up・Esc（コントロールは 'PCM'/'Headphone'）
+speaker-test -c1 -twav    # スピーカーテスト
+sudo alsactl store        # 再起動後も維持（alsa-restore.service が復元）
+```
+
+非対話なら `amixer sset PCM unmute 100%`（コントロール名は `amixer scontrols` で確認）。
+
+**デスクトップ用（PipeWire）** — コンポジタ / ブラウザ / 複数アプリで鳴らす場合:
+
+```sh
+sudo pacman -S alsa-utils pipewire pipewire-alsa pipewire-pulse wireplumber
+alsamixer                 # まずハードのミキサーをミュート解除（PipeWire は ALSA の上に乗る）
+sudo alsactl store
+systemctl --user enable --now pipewire pipewire-pulse wireplumber
+wpctl status              # グラフ / デフォルトシンクを確認
+```
+
+> [!NOTE]
+> PipeWire を使う場合でも `alsamixer` でハードのミキサーをミュート解除する必要が
+> あります（PipeWire は ALSA の上で動くため、PWM コントロールがミュートだと全体が
+> 無音）。PWM 音声は原理上ノイズ/低音質が乗りやすい仕様です（uConsole 共通）。
+
 ## AIO 拡張ボード（任意）
 
 [HackerGadgets uConsole AIO V1/V2](https://hackergadgets.com/pages/hackergadgets-uconsole-rtl-sdr-lora-gps-rtc-usb-hub-all-in-one-extension-board-setup-guide)
