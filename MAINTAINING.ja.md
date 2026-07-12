@@ -123,6 +123,17 @@ on-device で `pacman -Syu` しても通常は復活しません。念のため 
   `/usr/lib/modules/<kver>` は残すため、起動不良時は別マシンから `.bak` を戻して
   ロールバックできます。
 
+### AIO 拡張ボードと実機更新
+
+任意の HackerGadgets AIO ボード（`AIO_BOARD=v1|v2`、README 参照）は**ビルド時**の
+オプトインです。`build.sh` がボードのオーバーレイを `/boot/config.txt` に追記し
+（`apply_aio_config`）、`build-kernel.sh` が `rtc-pcf85063`/`spidev` モジュールを
+常時有効化します。リリース tarball は AIO *無し*で作成するため、tarball から
+`config.txt` を再配置する `scripts/update.sh` は、カーネル更新時に**追記した AIO 行を
+上書き**します。旧ファイルは `config.txt.bak` に退避されるので、AIO ユーザは更新後に
+自分のブロックを再追記（または焼き直し）してください。ボード非搭載の実機で GPIO
+ラインを有効化しないよう、AIO は意図的に公開リリースへ含めません。
+
 ### pacman サンドボックス / Landlock
 
 実機での症状: `pacman -Syu` が `restricting filesystem access failed because

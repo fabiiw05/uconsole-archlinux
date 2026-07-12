@@ -42,3 +42,6 @@ kernel=kernel8-cm4.img
 
 # SD overclock (optional)
 #dtparam=sd_overclock=100
+
+# HackerGadgets AIO extension board (RTL-SDR/LoRa/GPS/RTC/USB hub) is optional:
+# build with AIO_BOARD=v1 or AIO_BOARD=v2 to append its overlays here. See README.

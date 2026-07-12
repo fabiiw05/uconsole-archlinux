@@ -10,6 +10,8 @@ set -uo pipefail
 UC_HOSTNAME="${UC_HOSTNAME:-uconsole}"
 TIMEZONE="${TIMEZONE:-Asia/Tokyo}"
 LOCALE="${LOCALE:-en_US.UTF-8}"
+# Optional HackerGadgets AIO extension board ("", "v1" or "v2"); set by build.sh.
+AIO_BOARD="${AIO_BOARD:-}"
 
 # Under qemu-user emulation, pacman's sandbox (Landlock) is unavailable and
 # fails with "Landlock is not supported by the kernel", so disable it.
@@ -152,6 +154,21 @@ if ${PAC} -Sy --noconfirm --needed networkmanager sudo; then
   systemctl enable NetworkManager || true
 else
   echo "!! package install failed (continuing)"
+fi
+
+# --- Optional AIO extension board ------------------------------------
+# When enabled, keep the kernel's DVB TV drivers off the RTL-SDR dongle so
+# libusb userspace tools (rtl_test, SDR++, etc.) can claim it. The RTC, SPI and
+# GPS are handled by the config.txt overlays (see build.sh apply_aio_config);
+# the kernel binds /dev/rtc0 and systemd reads it at boot, so no extra service.
+if [[ -n "${AIO_BOARD}" ]]; then
+  echo "==> [chroot] AIO board (${AIO_BOARD}): blacklisting RTL2832 DVB drivers"
+  cat > /etc/modprobe.d/aio-rtl-sdr.conf <<'BLACKLIST'
+# HackerGadgets AIO board: free the RTL-SDR dongle for libusb userspace tools.
+blacklist dvb_usb_rtl28xxu
+blacklist rtl2832
+blacklist rtl2830
+BLACKLIST
 fi
 
 echo "==> [chroot] customization complete"

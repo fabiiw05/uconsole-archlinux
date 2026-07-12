@@ -74,6 +74,14 @@ make "${KDEFCONFIG}"
 ./scripts/config --module CONFIG_DRM_PANEL_CWU50 || true
 ./scripts/config --module CONFIG_BACKLIGHT_OCP8178 || true
 ./scripts/config --module CONFIG_DRM_PANEL_CWD686 || true
+# Optional HackerGadgets AIO extension board. Built as modules so they only load
+# when the board's overlays/hardware are present; harmless without the board, so
+# enabled unconditionally (no special kernel rebuild needed to use AIO_BOARD).
+#   - PCF85063A battery-backed RTC
+#   - spidev for the LoRa (SX1262) transceiver via SPI1
+# (RTL-SDR needs no kernel driver; it is libusb userspace.)
+./scripts/config --module CONFIG_RTC_DRV_PCF85063 || true
+./scripts/config --module CONFIG_SPI_SPIDEV || true
 make olddefconfig
 
 make -j${JOBS} Image modules dtbs
