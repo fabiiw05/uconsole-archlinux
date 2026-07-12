@@ -81,6 +81,7 @@ systemd oneshot サービス）。
 | `JOBS`         | `nproc`                             | カーネルビルドの並列数        |
 | `OUT_DIR`      | `./out`                             | 出力先                        |
 | `SKIP_CHROOT`  | (未設定)                            | `1` で chroot カスタマイズ省略 |
+| `AIO_BOARD`    | (未設定)                            | `v1`/`v2` で [AIO 拡張ボード](#aio-拡張ボード任意)を有効化 |
 
 例:
 
@@ -110,6 +111,45 @@ sudo reboot                         # 再起動で反映
 マシンから `kernel8-cm4.img.bak` を書き戻してください。
 
 > メンテナは `scripts/package-kernel.sh` でリリースを作成します（[MAINTAINING.ja.md](MAINTAINING.ja.md) 参照）。
+
+## AIO 拡張ボード（任意）
+
+[HackerGadgets uConsole AIO V1/V2](https://hackergadgets.com/pages/hackergadgets-uconsole-rtl-sdr-lora-gps-rtc-usb-hub-all-in-one-extension-board-setup-guide)
+は RTL-SDR・LoRa（Semtech SX1262）・GPS・バッテリバックアップ付き PCF85063A RTC・
+USB ハブを追加する拡張ボードです。対応は `AIO_BOARD` による**オプトイン**で、
+既定のイメージは変わりません:
+
+```sh
+AIO_BOARD=v1 sudo ./build.sh   # AIO V1（全ラインが既定でオン）
+AIO_BOARD=v2 sudo ./build.sh   # AIO V2（GPIO 制御のラインを起動時にオン）
+```
+
+このフラグが焼き込むもの（**ハードウェア有効化のみ**）:
+
+- **config.txt オーバーレイ**（CM4 用に追記）: RTC（`i2c-rtc,pcf85063a`）・
+  LoRa SPI1（`spi1-1cs`）・GPS（既に有効な UART を使用）。`v2` ではさらに
+  GPS/LoRa/SDR/内部 USB の電源イネーブル GPIO を high にします
+  （`gpio=...=op,dh`）。V2 ではこれらのラインが high にするまでオフのためです。
+- **カーネルモジュール** `rtc-pcf85063` と `spidev`（`build-kernel.sh` で常時有効化。
+  ボードが存在するときのみロードされます）。
+- libusb ベースの SDR ツールがドングルを掴めるよう、RTL2832 系 DVB ドライバを
+  `/etc/modprobe.d` でブラックリスト化。
+
+RTC はそのまま動作します（カーネルがオーバーレイから `/dev/rtc0` を登録し、
+systemd が起動時に読み込みます）。**ユーザ空間の SDR/LoRa アプリは焼き込みません** —
+ベンダの `apt`/`.deb` パッケージは Arch には存在しないためです。AUR 等から各自で
+導入してください（`rtl-sdr`, `sdrpp-git`, `meshtasticd`）。Meshtastic の LoRa
+`config.yaml` は `spidev1.0` を使います。
+
+> [!NOTE]
+> V2 の GPIO ピン番号や RTC の I²C アドレスはベンダガイド準拠です。お手元の
+> ボードリビジョンに合わせて再確認してください。
+
+> [!WARNING]
+> 実機の `scripts/update.sh` は（AIO 無しでビルドされた）リリース tarball から
+> `config.txt` を再配置するため、カーネル更新で**この AIO 行がリセットされます**。
+> 更新後は `config.txt.bak` から復元する（または焼き直す）でください。
+> [MAINTAINING.ja.md](MAINTAINING.ja.md) 参照。
 
 ## 構成
 

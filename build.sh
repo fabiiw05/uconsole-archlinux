@@ -25,6 +25,11 @@ OUT_DIR="${OUT_DIR:-${SCRIPT_DIR}/out}"
 CACHE_DIR="${CACHE_DIR:-${SCRIPT_DIR}/cache}"
 WORK_DIR="${WORK_DIR:-${SCRIPT_DIR}/work}"
 SKIP_CHROOT="${SKIP_CHROOT:-}"
+# Optional HackerGadgets AIO extension board (RTL-SDR / LoRa / GPS / RTC / USB
+# hub). Unset = off (base image unchanged). Set to "v1" or "v2" to enable the
+# board's overlays in config.txt; "v2" additionally powers on the GPIO-gated
+# GPS/LoRa/SDR/internal-USB rails. See apply_aio_config() and README.
+AIO_BOARD="${AIO_BOARD:-}"
 
 # uConsole kernel (ak-rex/ClockworkPi-linux, rpi-6.12.y, built from source).
 # It carries new-batch LCD panel support (panel-cwu50 id_gpio detection +
@@ -42,6 +47,10 @@ ROOT_MNT="${WORK_DIR}/root"
 # --- Prerequisite checks -----------------------------------------------
 require_root
 require_cmds sfdisk losetup mkfs.vfat mkfs.ext4 bsdtar
+case "${AIO_BOARD}" in
+  ""|v1|v2) ;;
+  *) die "AIO_BOARD must be unset, 'v1', or 'v2' (got '${AIO_BOARD}')" ;;
+esac
 if command -v wget >/dev/null 2>&1; then DL=wget; \
 elif command -v curl >/dev/null 2>&1; then DL=curl; \
 else die "wget or curl is required"; fi
@@ -190,6 +199,7 @@ customize_chroot() {
   install -m 0755 "${SCRIPT_DIR}/scripts/customize.sh" "${ROOT_MNT}/root/customize.sh"
   chroot "${ROOT_MNT}" /usr/bin/env \
       UC_HOSTNAME="${UC_HOSTNAME}" TIMEZONE="${TIMEZONE}" LOCALE="${LOCALE}" \
+      AIO_BOARD="${AIO_BOARD}" \
       /bin/bash /root/customize.sh
   rm -f "${ROOT_MNT}/root/customize.sh"
 
@@ -224,6 +234,39 @@ reapply_boot_config() {
     || warn "clockworkpi-uconsole-cm4.dtbo not in overlays (new panel may not work)"
 }
 
+# --- 5.6 Optional AIO extension-board boot config ----------------------
+# Append the HackerGadgets AIO overlays to /boot/config.txt when AIO_BOARD is
+# set. Must run AFTER reapply_boot_config (which re-copies config.txt from the
+# source and would otherwise clobber this append). The i2c-rtc / spi1-1cs
+# overlays are stock RPi overlays already shipped in /boot/overlays; GPS uses
+# the enable_uart=1 already set in config.txt's [all] section.
+apply_aio_config() {
+  [[ -n "${AIO_BOARD}" ]] || return 0
+  log "enabling AIO extension board (${AIO_BOARD}) in config.txt"
+  cat >> "${ROOT_MNT}/boot/config.txt" <<AIO
+
+# ============================================================
+# HackerGadgets AIO extension board (enabled via AIO_BOARD=${AIO_BOARD})
+#   RTL-SDR / LoRa (SX1262) / GPS / PCF85063A RTC / USB hub
+# ============================================================
+[cm4]
+# RTC (battery-backed PCF85063A on the ARM I2C bus)
+dtparam=i2c_arm=on
+dtoverlay=i2c-rtc,pcf85063a
+# LoRa (SX1262) via SPI1
+dtparam=spi=on
+dtoverlay=spi1-1cs
+# GPS uses the serial console (enable_uart=1, already set in [all])
+AIO
+  if [[ "${AIO_BOARD}" == v2 ]]; then
+    cat >> "${ROOT_MNT}/boot/config.txt" <<'AIOV2'
+# V2 only: GPS/LoRa/SDR/internal-USB are powered off by default and gated behind
+# GPIO enable pins. Drive them high at firmware level (op = output, dh = high).
+gpio=7,16,23,27=op,dh
+AIOV2
+  fi
+}
+
 # --- 6. Finalize -------------------------------------------------------
 finalize() {
   sync
@@ -245,6 +288,7 @@ main() {
   customize_chroot
   install_kernel
   reapply_boot_config
+  apply_aio_config
   finalize
 }
 

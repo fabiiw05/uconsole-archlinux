@@ -83,6 +83,7 @@ service that disables itself afterwards).
 | `JOBS`        | `nproc`                             | Kernel build parallelism        |
 | `OUT_DIR`     | `./out`                             | Output directory                |
 | `SKIP_CHROOT` | (unset)                             | `1` to skip chroot customization |
+| `AIO_BOARD`   | (unset)                             | `v1`/`v2` to enable the [AIO extension board](#aio-extension-board-optional) |
 
 Example:
 
@@ -113,6 +114,44 @@ branch HEAD. If a new kernel won't boot, restore `kernel8-cm4.img.bak` from any
 machine that can mount the FAT32 boot partition.
 
 > Maintainers cut a release with `scripts/package-kernel.sh` — see
+> [MAINTAINING.md](MAINTAINING.md).
+
+## AIO extension board (optional)
+
+The [HackerGadgets uConsole AIO V1/V2](https://hackergadgets.com/pages/hackergadgets-uconsole-rtl-sdr-lora-gps-rtc-usb-hub-all-in-one-extension-board-setup-guide)
+adds RTL-SDR, LoRa (Semtech SX1262), GPS, a battery-backed PCF85063A RTC, and a
+USB hub. Support is **opt-in** via `AIO_BOARD` — the default image is unchanged:
+
+```sh
+AIO_BOARD=v1 sudo ./build.sh   # AIO V1 (all rails on by default)
+AIO_BOARD=v2 sudo ./build.sh   # AIO V2 (GPIO-gated rails powered on at boot)
+```
+
+What the flag bakes in (**hardware enablement only**):
+
+- **config.txt overlays** appended for CM4: RTC (`i2c-rtc,pcf85063a`), LoRa SPI1
+  (`spi1-1cs`), and GPS over the already-enabled UART. `v2` additionally drives
+  the GPS/LoRa/SDR/internal-USB power-enable GPIOs high (`gpio=...=op,dh`), since
+  on V2 those rails are off until pulled high.
+- **kernel modules** `rtc-pcf85063` and `spidev` (enabled unconditionally in
+  `build-kernel.sh`; they only load when the board is present).
+- an `/etc/modprobe.d` blacklist of the RTL2832 DVB TV drivers so libusb SDR
+  tools can claim the dongle.
+
+The RTC works out of the box (the kernel binds `/dev/rtc0` from the overlay and
+systemd reads it at boot). The **userspace SDR/LoRa apps are not baked in** — the
+vendor's `apt`/`.deb` packages don't exist on Arch. Install them yourself, e.g.
+from the AUR (`rtl-sdr`, `sdrpp-git`, `meshtasticd`); Meshtastic's LoRa
+`config.yaml` uses `spidev1.0`.
+
+> [!NOTE]
+> The exact V2 GPIO pin numbers and RTC I²C address follow the vendor guide and
+> should be re-checked against your board revision.
+
+> [!WARNING]
+> On-device `scripts/update.sh` reinstalls `config.txt` from the release tarball
+> (which is built without AIO), so a kernel update **resets these AIO lines**.
+> Restore them from `config.txt.bak` (or re-flash) afterwards. See
 > [MAINTAINING.md](MAINTAINING.md).
 
 ## Layout

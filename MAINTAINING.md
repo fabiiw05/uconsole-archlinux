@@ -130,6 +130,18 @@ Key properties:
   the previous kernel's `/usr/lib/modules/<kver>` in place, so a bad kernel can
   be rolled back by restoring the `.bak` from any machine.
 
+### AIO extension board and on-device updates
+
+The optional HackerGadgets AIO board (`AIO_BOARD=v1|v2`, see the README) is a
+**build-time** opt-in: `build.sh` appends the board's overlays to
+`/boot/config.txt` (`apply_aio_config`), and `build-kernel.sh` enables the
+`rtc-pcf85063`/`spidev` modules unconditionally. Release tarballs are cut
+*without* AIO, so `scripts/update.sh` — which reinstalls `config.txt` from the
+tarball — **overwrites the appended AIO lines** on a kernel update. The old file
+is saved to `config.txt.bak`, so AIO users should re-append their block (or
+re-flash) afterward. We deliberately keep AIO out of public releases to avoid
+enabling GPIO rails on devices without the board.
+
 ### pacman sandbox / Landlock
 
 Symptom on the device: `pacman -Syu` dies with `restricting filesystem access
