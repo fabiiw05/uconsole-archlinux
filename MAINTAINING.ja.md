@@ -203,6 +203,30 @@ timedatectl timesync-status   # ServerName=ntp.nict.jp / synced になれば OK
 systemd-networkd-wait-online` を実行し、上記 `timesyncd.conf.d` を配置しておけば、
 以降のイメージはこの問題を最初から回避できる。
 
+### WiFi 不安定（brcmfmac パワーセーブ）
+
+**症状**: WiFi が稀に切断される。`nmcli` で再接続すると復旧する。
+
+**原因**: `brcmfmac` ドライバ（CM4 内蔵 WiFi）のデフォルトで省電力
+モード（`Power save: on`）が有効になっており、省電力状態でチップが
+スリープに入り、復帰に失敗して再接続が必要になる。
+
+**対処（実機）**: NetworkManager でパワーセーブを恒久無効化する。
+
+```sh
+# 即時（再起動まで有効）
+sudo iw dev wlan0 set power_save off
+
+# 恒久（現在・将来の全接続に適用）
+sudo tee /etc/NetworkManager/conf.d/wifi-powersave-off.conf <<'EOF'
+[connection]
+wifi.powersave=2
+EOF
+```
+
+**イメージ側で根治済み**: `scripts/customize.sh` がビルド時に上記の
+設定ファイルを書き込むため、新規イメージでは最初から無効化されている。
+
 ## 今後の方向性
 
 - **カーネルの PKGBUILD 化**（ファイル注入をやめる）。pacman 管理下に入れば、

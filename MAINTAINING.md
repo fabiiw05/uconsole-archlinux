@@ -216,6 +216,30 @@ NetworkManager enablement, also run `systemctl disable systemd-networkd
 systemd-networkd.socket systemd-networkd-wait-online` and drop the
 `timesyncd.conf.d` file above, so future images avoid this out of the box.
 
+### WiFi instability (brcmfmac power save)
+
+**Symptom**: WiFi occasionally drops; reconnecting via `nmcli` restores it.
+
+**Root cause**: the `brcmfmac` driver (CM4 onboard WiFi) has power saving
+enabled by default (`Power save: on`). In this state the driver occasionally
+puts the chip to sleep and fails to recover, requiring a manual reconnect.
+
+**Fix (on device)**: disable power save permanently via NetworkManager.
+
+```sh
+# Immediate (until reboot)
+sudo iw dev wlan0 set power_save off
+
+# Permanent (applies to all connections, current and future)
+sudo tee /etc/NetworkManager/conf.d/wifi-powersave-off.conf <<'EOF'
+[connection]
+wifi.powersave=2
+EOF
+```
+
+**Fixed in the image**: `scripts/customize.sh` writes the config file above
+at build time, so fresh images ship with WiFi power saving disabled.
+
 ## Future directions
 
 - **Package the kernel as a PKGBUILD** instead of file-injection. Under pacman

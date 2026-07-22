@@ -156,6 +156,16 @@ else
   echo "!! package install failed (continuing)"
 fi
 
+# WiFi power management: the brcmfmac driver occasionally puts the chip to
+# sleep and fails to recover, causing rare WiFi drops that require a manual
+# reconnect. Disable power saving permanently for all connections.
+echo "==> [chroot] disabling WiFi power save (brcmfmac)"
+mkdir -p /etc/NetworkManager/conf.d
+cat > /etc/NetworkManager/conf.d/wifi-powersave-off.conf <<'EOF'
+[connection]
+wifi.powersave=2
+EOF
+
 # --- Internal speaker amplifier enable -------------------------------
 # The uConsole's onboard speaker amplifier is gated by an enable GPIO
 # (BCM11 / gpiochip0 line 11). Headphones bypass the amp, so without this the
